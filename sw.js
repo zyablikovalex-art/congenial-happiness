@@ -1,5 +1,8 @@
-// Simple offline-first service worker for the PWA.
-const CACHE = "mini-football-v2";
+// Offline-capable service worker for the PWA.
+// Strategy: network-first (so a new deploy is always picked up when online),
+// with the cache used only as an offline fallback. This avoids users getting
+// stuck on a stale cached version after an update.
+const CACHE = "mini-football-v3";
 const ASSETS = [
   "./",
   "./index.html",
@@ -28,18 +31,19 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   const req = e.request;
   if (req.method !== "GET") return;
-  // Network-first for navigations, cache-first for the rest.
-  if (req.mode === "navigate") {
-    e.respondWith(
-      fetch(req).catch(() => caches.match("./index.html"))
-    );
-    return;
-  }
+
+  // Network-first: try the network, fall back to cache when offline.
   e.respondWith(
-    caches.match(req).then((hit) => hit || fetch(req).then((res) => {
-      const copy = res.clone();
-      caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
-      return res;
-    }).catch(() => hit))
+    fetch(req)
+      .then((res) => {
+        if (res && res.ok && (res.type === "basic" || res.type === "default")) {
+          const copy = res.clone();
+          caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
+        }
+        return res;
+      })
+      .catch(() =>
+        caches.match(req).then((hit) => hit || caches.match("./index.html"))
+      )
   );
 });
