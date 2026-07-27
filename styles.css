@@ -16,6 +16,12 @@ html, body {
   -webkit-user-select: none;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  touch-action: none;
+}
+
+/* Все контейнеры — без масштабирующих жестов (touch-action не наследуется). */
+#app, #hud, #gamepad, .actions, #overlay, .card {
   touch-action: none;
 }
 

@@ -153,6 +153,23 @@ const el = {
 };
 
 /* =========================================================================
+   Запрет масштабирования на мобильных (iOS Safari игнорирует user-scalable=no).
+   Гасим пинч-жесты и двойной тап, не мешая кнопкам/джойстику.
+   ========================================================================= */
+document.addEventListener("gesturestart", (e) => e.preventDefault(), { passive: false });
+document.addEventListener("gesturechange", (e) => e.preventDefault(), { passive: false });
+document.addEventListener("dblclick", (e) => e.preventDefault(), { passive: false });
+let lastTouchEnd = 0;
+document.addEventListener("touchend", (e) => {
+  const now = e.timeStamp;
+  // Гасим только быстрый повторный тап (double-tap zoom), не трогая кнопки.
+  if (now - lastTouchEnd <= 350 && !(e.target && e.target.closest && e.target.closest("button"))) {
+    e.preventDefault();
+  }
+  lastTouchEnd = now;
+}, { passive: false });
+
+/* =========================================================================
    Ввод: экранный геймпад + клавиатура
    ========================================================================= */
 const pad = { sprint: false };
