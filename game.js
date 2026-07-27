@@ -1,17 +1,18 @@
 "use strict";
 
 /* =========================================================================
-   Мини-Футбол 11 на 11 — псевдо-3D вид сбоку (broadcast).
-   Управление: экранный геймпад (D-pad + Пас/Удар/Спринт) или клавиатура.
+   Футбол 11 на 11 — псевдо-3D вид сбоку (broadcast), альбомная ориентация.
+   Управление: экранный джойстик + Пас/Удар/Спринт или клавиатура.
+   «Пас» работает и как отбор, если мяч не у нашей команды.
    Всё игровое состояние живёт в мировых координатах (x вдоль поля от ворот
    к воротам, z — глубина от ближней бровки к дальней). Проекция в экранные
    пиксели делается отдельно в project().
    ========================================================================= */
 
 // ---- Мир ----
-const PITCH_L = 900;      // длина поля (ось x: 0 — левые ворота, PITCH_L — правые)
-const PITCH_W = 560;      // ширина/глубина (ось z: 0 — ближняя бровка, PITCH_W — дальняя)
-const GOAL_HALF = 92;     // половина ширины створа ворот (по z)
+const PITCH_L = 940;      // длина поля (ось x: 0 — левые ворота, PITCH_L — правые)
+const PITCH_W = 640;      // ширина/глубина (ось z: 0 — ближняя бровка, PITCH_W — дальняя)
+const GOAL_HALF = 104;    // половина ширины створа ворот (по z)
 const GOAL_DEPTH_H = 130; // макс. высота мяча, при которой он ещё влетает в ворота
 const PLR_R = 15;         // радиус игрока (мир)
 const BALL_R = 8;
@@ -26,7 +27,8 @@ const SPRINT = 250;       // скорость со спринтом
 const GK_SPEED = 158;
 const ACCEL = 1000;
 const CTRL_R = 26;        // радиус получения контроля над мячом
-const TACKLE_R = 27;      // радиус отбора
+const TACKLE_R = 27;      // радиус отбора (ИИ, автоматический)
+const TACKLE_STEAL_R = 42;// радиус ручного отбора по кнопке «Пас»
 const STEAL_RATE = 2.2;   // вероятность отбора в секунду при контакте
 const DRIBBLE_AHEAD = 22; // насколько мяч выносится вперёд при ведении
 const PASS_SPEED = 360;
@@ -55,12 +57,12 @@ function resize() {
 
   P.cssW = cssW; P.cssH = cssH; P.dpr = dpr;
   P.CX = cssW / 2;
-  P.FAR_Y = cssH * 0.17;
-  P.NEAR_Y = cssH * 0.72;
-  P.NEAR_HALFW = cssW * 0.47;
-  P.FAR_HALFW = cssW * 0.27;
-  P.NEAR_SCALE = clamp(cssH / 760, 0.72, 1.5);
-  P.FAR_SCALE = P.NEAR_SCALE * 0.56;
+  P.FAR_Y = cssH * 0.15;
+  P.NEAR_Y = cssH * 0.88;
+  P.NEAR_HALFW = cssW * 0.49;   // ближняя бровка — почти на всю ширину
+  P.FAR_HALFW = cssW * 0.34;    // дальняя пошире (меньше сужение) => поле шире
+  P.NEAR_SCALE = clamp(cssH / 540, 0.8, 1.7);
+  P.FAR_SCALE = P.NEAR_SCALE * 0.6;
 }
 window.addEventListener("resize", resize);
 
@@ -143,10 +145,49 @@ const el = {
 /* =========================================================================
    Ввод: экранный геймпад + клавиатура
    ========================================================================= */
-const pad = { up: false, down: false, left: false, right: false, sprint: false };
+const pad = { sprint: false };
 const actionQueue = []; // 'pass' | 'shoot'
 
-// Экранные кнопки (мультитач: каждая кнопка держит своё состояние)
+// Экранный джойстик (аналоговый). База зафиксирована, ручка тянется к пальцу.
+const stick = { active: false, id: null, cx: 0, cy: 0, jx: 0, jy: 0, R: 46 };
+const stickEl = document.getElementById("stick");
+const knobEl = document.getElementById("knob");
+
+function stickSet(clientX, clientY) {
+  let dx = clientX - stick.cx;
+  let dy = clientY - stick.cy;
+  const d = hyp(dx, dy);
+  if (d > stick.R) { dx = dx / d * stick.R; dy = dy / d * stick.R; }
+  stick.jx = dx / stick.R;
+  stick.jy = dy / stick.R;
+  if (knobEl) knobEl.style.transform = `translate(${dx}px, ${dy}px)`;
+}
+function stickReset() {
+  stick.active = false; stick.id = null; stick.jx = 0; stick.jy = 0;
+  if (knobEl) knobEl.style.transform = "translate(0px, 0px)";
+}
+if (stickEl) {
+  stickEl.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    const r = stickEl.getBoundingClientRect();
+    stick.cx = r.left + r.width / 2;
+    stick.cy = r.top + r.height / 2;
+    stick.R = r.width * 0.36;
+    stick.active = true; stick.id = e.pointerId;
+    stickSet(e.clientX, e.clientY);
+    try { stickEl.setPointerCapture(e.pointerId); } catch (_) {}
+  });
+  stickEl.addEventListener("pointermove", (e) => {
+    if (!stick.active || e.pointerId !== stick.id) return;
+    stickSet(e.clientX, e.clientY);
+  });
+  const up = (e) => { if (e.pointerId === stick.id) stickReset(); };
+  stickEl.addEventListener("pointerup", up);
+  stickEl.addEventListener("pointercancel", up);
+  stickEl.addEventListener("contextmenu", (e) => e.preventDefault());
+}
+
+// Кнопки действий: Спринт (удержание), Пас/Отбор, Удар
 if (el.gamepad) {
   el.gamepad.querySelectorAll("[data-btn]").forEach((btn) => {
     const name = btn.dataset.btn;
@@ -188,12 +229,18 @@ window.addEventListener("keydown", (e) => {
 window.addEventListener("keyup", (e) => keyHeld.delete(e.key.toLowerCase()));
 
 function inputVector() {
+  // Клавиатура (дискретно, полная скорость)
   let dx = 0, dz = 0;
-  if (pad.left || keyHeld.has("arrowleft") || keyHeld.has("a")) dx -= 1;
-  if (pad.right || keyHeld.has("arrowright") || keyHeld.has("d")) dx += 1;
-  if (pad.up || keyHeld.has("arrowup") || keyHeld.has("w")) dz += 1;   // вверх по экрану = дальняя сторона
-  if (pad.down || keyHeld.has("arrowdown") || keyHeld.has("s")) dz -= 1;
+  if (keyHeld.has("arrowleft") || keyHeld.has("a")) dx -= 1;
+  if (keyHeld.has("arrowright") || keyHeld.has("d")) dx += 1;
+  if (keyHeld.has("arrowup") || keyHeld.has("w")) dz += 1;   // вверх по экрану = дальняя сторона
+  if (keyHeld.has("arrowdown") || keyHeld.has("s")) dz -= 1;
   if (dx || dz) { const m = hyp(dx, dz); return { x: dx / m, z: dz / m }; }
+  // Джойстик (аналогово: модуль вектора = сила нажатия)
+  if (stick.active) {
+    const mag = hyp(stick.jx, stick.jy);
+    if (mag > 0.14) return { x: stick.jx, z: -stick.jy }; // экранный низ (jy>0) => к ближней бровке (z-)
+  }
   return { x: 0, z: 0 };
 }
 function sprintHeld() { return pad.sprint || keyHeld.has("shift"); }
@@ -265,6 +312,23 @@ function doPass(p) {
   const dx = lx - p.x, dz = lz - p.z, d = hyp(dx, dz) || 1;
   const power = Math.min(PASS_SPEED, 150 + d * 1.4);
   kick(power, dx / d, dz / d, 0);
+}
+
+// Кнопка «Пас»: если мяч у нас — пас; иначе — попытка отбора/перехвата.
+function doPassOrTackle(p) {
+  if (!p) return;
+  if (ball.owner === p) { doPass(p); return; }
+  // Рывок к мячу — делает отбор отзывчивым даже с небольшой дистанции.
+  const dx = ball.x - p.x, dz = ball.z - p.z, d = hyp(dx, dz) || 1;
+  p.vx += dx / d * 90; p.vz += dz / d * 90;
+  if (d < TACKLE_STEAL_R) {
+    if (ball.owner && ball.owner.team !== p.team) {
+      // Отбор у соперника (не гарантирован при большой скорости мяча/дистанции)
+      ball.owner = p; ball.cooldown = 0.05;
+    } else if (!ball.owner) {
+      ball.owner = p; ball.cooldown = 0; // перехват свободного мяча
+    }
+  }
 }
 
 /* =========================================================================
@@ -495,7 +559,7 @@ function step(dt) {
   // Действия игрока
   while (actionQueue.length) {
     const a = actionQueue.shift();
-    if (a === "pass") doPass(active);
+    if (a === "pass") doPassOrTackle(active);
     else if (a === "shoot") doShoot(active);
   }
 

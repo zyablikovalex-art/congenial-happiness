@@ -97,30 +97,33 @@ body.playing #gamepad { display: flex; }
 }
 #gamepad button.pressed { transform: scale(0.9); }
 
-/* Крестовина */
-.dpad {
+/* Джойстик */
+.stick {
+  pointer-events: auto;
   position: relative;
-  width: 150px;
-  height: 150px;
-}
-.dbtn {
-  position: absolute;
-  width: 50px;
-  height: 50px;
-  font-size: 18px;
-  background: rgba(255, 255, 255, 0.16);
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  width: 132px;
+  height: 132px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  border: 2px solid rgba(255, 255, 255, 0.22);
   backdrop-filter: blur(3px);
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
-.dbtn.pressed { background: rgba(255, 225, 77, 0.55); }
-.dbtn.up    { top: 0;   left: 50px; }
-.dbtn.down  { bottom: 0; left: 50px; }
-.dbtn.left  { top: 50px; left: 0; }
-.dbtn.right { top: 50px; right: 0; }
+.knob {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 62px;
+  height: 62px;
+  margin: -31px 0 0 -31px;
+  border-radius: 50%;
+  background: rgba(255, 225, 77, 0.85);
+  border: 2px solid rgba(255, 255, 255, 0.6);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  will-change: transform;
+}
 
 /* Кнопки действий */
 .actions {
@@ -203,11 +206,32 @@ button#startBtn {
 }
 button#startBtn:active { transform: scale(0.96); }
 
-@media (max-width: 360px) {
-  .dpad { width: 132px; height: 132px; }
-  .dbtn { width: 44px; height: 44px; }
-  .dbtn.up, .dbtn.down { left: 44px; }
-  .dbtn.left, .dbtn.right { top: 44px; }
+/* ---------- Подсказка «поверни устройство» ---------- */
+#rotate {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  background: #06371c;
+  z-index: 20;
+  padding: 24px;
+}
+.rotate-icon { font-size: 54px; margin-bottom: 14px; }
+#rotate p { font-size: 18px; line-height: 1.5; opacity: 0.92; }
+
+/* На узких экранах в портретной ориентации просим повернуть устройство. */
+@media (orientation: portrait) and (max-width: 900px) {
+  #rotate { display: flex; }
+}
+
+/* Небольшие экраны в альбоме — ужимаем контролы. */
+@media (orientation: landscape) and (max-height: 430px) {
+  #hud { padding: 4px 14px; }
+  .stick { width: 116px; height: 116px; }
+  .knob { width: 54px; height: 54px; margin: -27px 0 0 -27px; }
   .abtn.shoot { width: 82px; height: 82px; }
   .abtn.pass { width: 66px; height: 66px; }
+  .abtn.sprint { width: 50px; height: 50px; }
 }
