@@ -1,0 +1,32 @@
+{
+  "name": "Мини-Футбол",
+  "short_name": "Футбол",
+  "description": "Аркадный мини-футбол 1 на 1 против ИИ.",
+  "start_url": "./",
+  "scope": "./",
+  "id": "./",
+  "display": "fullscreen",
+  "orientation": "portrait",
+  "background_color": "#06371c",
+  "theme_color": "#0b7a3b",
+  "icons": [
+    {
+      "src": "./icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

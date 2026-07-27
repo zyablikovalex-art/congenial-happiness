@@ -1,0 +1,40 @@
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+<meta name="theme-color" content="#0b7a3b" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Мини-Футбол" />
+<title>Мини-Футбол</title>
+<link rel="manifest" href="./manifest.webmanifest" />
+<link rel="icon" href="./icons/icon-192.png" />
+<link rel="apple-touch-icon" href="./icons/icon-192.png" />
+<link rel="stylesheet" href="./styles.css" />
+
+<div id="app">
+  <header id="hud">
+    <div class="score">
+      <span class="team you">ВЫ</span>
+      <span class="nums"><b id="scoreYou">0</b> : <b id="scoreCpu">0</b></span>
+      <span class="team cpu">ИИ</span>
+    </div>
+    <div id="clock">01:30</div>
+  </header>
+
+  <canvas id="pitch" width="480" height="800" aria-label="Игровое поле"></canvas>
+
+  <div id="overlay" class="show">
+    <div class="card">
+      <h1>Мини-Футбол ⚽</h1>
+      <p id="overlayText">
+        Забей больше голов, чем ИИ, за 1:30.<br />
+        <b>Телефон:</b> тяни палец по нижней части экрана — джойстик.<br />
+        <b>ПК:</b> стрелки или WASD.<br />
+        Врежься в мяч, чтобы ударить.
+      </p>
+      <button id="startBtn">Играть</button>
+      <p class="hint" id="installHint" hidden>Совет: «Добавить на экран Домой», чтобы играть как приложение.</p>
+    </div>
+  </div>
+</div>
+
+<script src="./game.js"></script>

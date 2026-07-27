@@ -1,0 +1,107 @@
+:root {
+  --grass: #0b7a3b;
+  --grass-dark: #0a6c35;
+  --line: rgba(255, 255, 255, 0.85);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: #06371c;
+  color: #fff;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#app {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+           env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+#hud {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+}
+
+.score {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+}
+.score .team { font-size: 13px; opacity: 0.85; letter-spacing: 0.5px; }
+.score .you { color: #ffe14d; }
+.score .cpu { color: #ff8f6b; }
+.score .nums { font-size: 22px; font-variant-numeric: tabular-nums; }
+.score .nums b { font-size: 24px; }
+
+#clock {
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  background: rgba(0, 0, 0, 0.25);
+  padding: 4px 12px;
+  border-radius: 999px;
+}
+
+#pitch {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  display: block;
+  touch-action: none;
+  border-radius: 14px;
+}
+
+#overlay {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(3, 25, 13, 0.72);
+  backdrop-filter: blur(4px);
+  z-index: 10;
+}
+#overlay.show { display: flex; }
+
+.card {
+  max-width: 340px;
+  width: 100%;
+  text-align: center;
+  background: #0d4f2a;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 18px;
+  padding: 26px 22px 28px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+}
+.card h1 { margin: 0 0 12px; font-size: 26px; }
+.card p { margin: 0 0 18px; line-height: 1.6; font-size: 15px; opacity: 0.92; }
+.card .hint { font-size: 13px; opacity: 0.7; margin-bottom: 0; }
+
+button#startBtn {
+  appearance: none;
+  border: 0;
+  background: #ffe14d;
+  color: #06371c;
+  font-size: 18px;
+  font-weight: 700;
+  padding: 14px 34px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: transform 0.08s ease;
+}
+button#startBtn:active { transform: scale(0.96); }
