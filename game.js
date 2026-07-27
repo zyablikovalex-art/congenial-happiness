@@ -371,18 +371,35 @@ function doPass(p, f) {
   if (f == null) f = 0.7;
   const attackDir = p.team === 0 ? 1 : -1;
   const speed = PASS_MIN + f * (PASS_MAX - PASS_MIN);
+
+  // Направление прицела. У активного игрока — джойстик/клавиши (куда целишься),
+  // иначе (в т.ч. ИИ) — куда смотрит игрок, в крайнем случае вперёд к воротам.
+  let aimx = 0, aimz = 0;
+  if (p === active) {
+    const iv = inputVector();
+    if (hyp(iv.x, iv.z) > 0.2) { aimx = iv.x; aimz = iv.z; }
+  }
+  if (aimx === 0 && aimz === 0) {
+    if (hyp(p.dirx, p.dirz) > 0.1) { aimx = p.dirx; aimz = p.dirz; }
+    else { aimx = attackDir; aimz = 0; }
+  }
+  const am = hyp(aimx, aimz) || 1; aimx /= am; aimz /= am;
+
+  // Ищем партнёра в секторе прицела (совпадение направления важнее всего).
   let best = null, bestScore = -1e9;
   for (const t of players) {
     if (t.team !== p.team || t === p || t.isGK) continue;
     const dx = t.x - p.x, dz = t.z - p.z, d = hyp(dx, dz);
-    if (d < 40 || d > 420) continue;
-    const forward = dx * attackDir;              // хотим вперёд, к воротам соперника
-    const facingBonus = (dx * p.dirx + dz * p.dirz) / (d || 1) * 60;
-    const score = forward * 1.0 - Math.abs(dz) * 0.25 - d * 0.1 + facingBonus;
+    if (d < 30 || d > 480) continue;
+    const align = (dx * aimx + dz * aimz) / d;   // -1..1: насколько партнёр в сторону прицела
+    if (align < 0.30) continue;                  // не пасуем вбок/назад от прицела
+    const score = align * 1.8 - d / 500;         // приоритет — совпадение с прицелом, ближе лучше
     if (score > bestScore) { bestScore = score; best = t; }
   }
-  if (!best) { kick(speed, attackDir, 0, 0); return; } // аварийный вынос вперёд
-  const lx = best.x + attackDir * 22, lz = best.z;     // небольшой вынос под ход
+
+  // Никого в секторе прицела — пас в направлении прицела (в свободную зону).
+  if (!best) { kick(speed, aimx, aimz, 0); return; }
+  const lx = best.x + aimx * 18, lz = best.z + aimz * 18; // небольшой вынос под ход
   const dx = lx - p.x, dz = lz - p.z, d = hyp(dx, dz) || 1;
   kick(speed, dx / d, dz / d, 0);
 }
