@@ -3,8 +3,8 @@
 <meta name="theme-color" content="#0b7a3b" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<meta name="apple-mobile-web-app-title" content="Мини-Футбол" />
-<title>Мини-Футбол</title>
+<meta name="apple-mobile-web-app-title" content="Футбол 11 на 11" />
+<title>Футбол 11 на 11</title>
 <link rel="manifest" href="./manifest.webmanifest" />
 <link rel="icon" href="./icons/icon-192.png" />
 <link rel="apple-touch-icon" href="./icons/icon-192.png" />
@@ -17,19 +17,36 @@
       <span class="nums"><b id="scoreYou">0</b> : <b id="scoreCpu">0</b></span>
       <span class="team cpu">ИИ</span>
     </div>
-    <div id="clock">01:30</div>
+    <div id="clock">02:00</div>
   </header>
 
-  <canvas id="pitch" width="480" height="800" aria-label="Игровое поле"></canvas>
+  <canvas id="pitch" aria-label="Игровое поле"></canvas>
+
+  <!-- Экранный геймпад -->
+  <div id="gamepad" aria-hidden="true">
+    <div class="dpad">
+      <button class="dbtn up" data-btn="up" aria-label="Вверх">▲</button>
+      <button class="dbtn left" data-btn="left" aria-label="Влево">◀</button>
+      <button class="dbtn right" data-btn="right" aria-label="Вправо">▶</button>
+      <button class="dbtn down" data-btn="down" aria-label="Вниз">▼</button>
+    </div>
+    <div class="actions">
+      <button class="abtn sprint" data-btn="sprint" aria-label="Спринт">⚡</button>
+      <button class="abtn pass" data-btn="pass" aria-label="Пас">ПАС</button>
+      <button class="abtn shoot" data-btn="shoot" aria-label="Удар">УДАР</button>
+    </div>
+  </div>
 
   <div id="overlay" class="show">
     <div class="card">
-      <h1>Мини-Футбол ⚽</h1>
+      <h1>Футбол 11 на 11 ⚽</h1>
       <p id="overlayText">
-        Забей больше голов, чем ИИ, за 1:30.<br />
-        <b>Телефон:</b> тяни палец по нижней части экрана — джойстик.<br />
-        <b>ПК:</b> стрелки или WASD.<br />
-        Врежься в мяч, чтобы ударить.
+        Забей больше голов, чем ИИ, за 2:00.<br />
+        Ты управляешь <b>ближайшим к мячу</b> игроком своей команды —
+        он подсвечен жёлтой стрелкой, переключение автоматическое.<br /><br />
+        <b>Телефон:</b> крестовина слева, кнопки <b>ПАС / УДАР / ⚡спринт</b> справа.<br />
+        <b>ПК:</b> стрелки или WASD — движение, <b>J/Пробел</b> — пас,
+        <b>L/Enter</b> — удар, <b>Shift</b> — спринт.
       </p>
       <button id="startBtn">Играть</button>
       <p class="hint" id="installHint" hidden>Совет: «Добавить на экран Домой», чтобы играть как приложение.</p>

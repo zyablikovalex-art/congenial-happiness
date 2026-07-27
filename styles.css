@@ -16,12 +16,14 @@ html, body {
   -webkit-user-select: none;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
+  touch-action: none;
 }
 
 #app {
   height: 100dvh;
   display: flex;
   flex-direction: column;
+  position: relative;
   padding: env(safe-area-inset-top) env(safe-area-inset-right)
            env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
@@ -32,7 +34,8 @@ html, body {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 16px;
+  padding: 8px 16px;
+  z-index: 5;
 }
 
 .score {
@@ -42,7 +45,7 @@ html, body {
   font-weight: 600;
 }
 .score .team { font-size: 13px; opacity: 0.85; letter-spacing: 0.5px; }
-.score .you { color: #ffe14d; }
+.score .you { color: #7fb0ff; }
 .score .cpu { color: #ff8f6b; }
 .score .nums { font-size: 22px; font-variant-numeric: tabular-nums; }
 .score .nums b { font-size: 24px; }
@@ -62,9 +65,103 @@ html, body {
   min-height: 0;
   display: block;
   touch-action: none;
-  border-radius: 14px;
+  background: #06371c;
 }
 
+/* ---------- Экранный геймпад ---------- */
+#gamepad {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: none;
+  justify-content: space-between;
+  align-items: flex-end;
+  padding: 0 20px calc(18px + env(safe-area-inset-bottom)) 20px;
+  pointer-events: none;
+  z-index: 6;
+}
+body.playing #gamepad { display: flex; }
+
+#gamepad button {
+  pointer-events: auto;
+  appearance: none;
+  border: 0;
+  color: #fff;
+  font-weight: 800;
+  font-family: inherit;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  transition: transform 0.05s ease, background 0.05s ease;
+}
+#gamepad button.pressed { transform: scale(0.9); }
+
+/* Крестовина */
+.dpad {
+  position: relative;
+  width: 150px;
+  height: 150px;
+}
+.dbtn {
+  position: absolute;
+  width: 50px;
+  height: 50px;
+  font-size: 18px;
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(3px);
+}
+.dbtn.pressed { background: rgba(255, 225, 77, 0.55); }
+.dbtn.up    { top: 0;   left: 50px; }
+.dbtn.down  { bottom: 0; left: 50px; }
+.dbtn.left  { top: 50px; left: 0; }
+.dbtn.right { top: 50px; right: 0; }
+
+/* Кнопки действий */
+.actions {
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-areas:
+    "sprint shoot"
+    "pass   shoot";
+  gap: 12px;
+  align-items: center;
+}
+.abtn {
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(3px);
+  border: 1px solid rgba(255, 255, 255, 0.3) !important;
+}
+.abtn.pass {
+  grid-area: pass;
+  width: 74px; height: 74px;
+  font-size: 15px;
+  background: rgba(47, 123, 255, 0.7);
+}
+.abtn.shoot {
+  grid-area: shoot;
+  width: 92px; height: 92px;
+  font-size: 17px;
+  background: rgba(232, 68, 60, 0.78);
+}
+.abtn.sprint {
+  grid-area: sprint;
+  width: 56px; height: 56px;
+  font-size: 22px;
+  background: rgba(255, 207, 64, 0.72);
+  color: #3a2b00;
+}
+.abtn.pressed { filter: brightness(1.3); }
+
+/* ---------- Оверлей ---------- */
 #overlay {
   position: fixed;
   inset: 0;
@@ -79,7 +176,7 @@ html, body {
 #overlay.show { display: flex; }
 
 .card {
-  max-width: 340px;
+  max-width: 360px;
   width: 100%;
   text-align: center;
   background: #0d4f2a;
@@ -88,8 +185,8 @@ html, body {
   padding: 26px 22px 28px;
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
 }
-.card h1 { margin: 0 0 12px; font-size: 26px; }
-.card p { margin: 0 0 18px; line-height: 1.6; font-size: 15px; opacity: 0.92; }
+.card h1 { margin: 0 0 12px; font-size: 24px; }
+.card p { margin: 0 0 18px; line-height: 1.55; font-size: 14px; opacity: 0.92; }
 .card .hint { font-size: 13px; opacity: 0.7; margin-bottom: 0; }
 
 button#startBtn {
@@ -105,3 +202,12 @@ button#startBtn {
   transition: transform 0.08s ease;
 }
 button#startBtn:active { transform: scale(0.96); }
+
+@media (max-width: 360px) {
+  .dpad { width: 132px; height: 132px; }
+  .dbtn { width: 44px; height: 44px; }
+  .dbtn.up, .dbtn.down { left: 44px; }
+  .dbtn.left, .dbtn.right { top: 44px; }
+  .abtn.shoot { width: 82px; height: 82px; }
+  .abtn.pass { width: 66px; height: 66px; }
+}

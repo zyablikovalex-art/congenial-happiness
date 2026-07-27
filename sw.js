@@ -1,5 +1,5 @@
 // Simple offline-first service worker for the PWA.
-const CACHE = "mini-football-v1";
+const CACHE = "mini-football-v2";
 const ASSETS = [
   "./",
   "./index.html",
