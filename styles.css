@@ -101,8 +101,10 @@ body.playing #gamepad { display: flex; }
 .stick {
   pointer-events: auto;
   position: relative;
-  width: 132px;
-  height: 132px;
+  width: 168px;
+  height: 168px;
+  margin-left: 30px;   /* чуть правее */
+  margin-bottom: 6px;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.12);
   border: 2px solid rgba(255, 255, 255, 0.22);
@@ -115,9 +117,9 @@ body.playing #gamepad { display: flex; }
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 62px;
-  height: 62px;
-  margin: -31px 0 0 -31px;
+  width: 78px;
+  height: 78px;
+  margin: -39px 0 0 -39px;
   border-radius: 50%;
   background: rgba(255, 225, 77, 0.85);
   border: 2px solid rgba(255, 255, 255, 0.6);
@@ -125,18 +127,19 @@ body.playing #gamepad { display: flex; }
   will-change: transform;
 }
 
-/* Кнопки действий */
+/* Кнопки действий — ромбом (верх/право/низ/лево) */
 .actions {
-  display: grid;
-  grid-template-columns: auto auto;
-  grid-template-areas:
-    "sprint shoot"
-    "switch shoot"
-    "pass   shoot";
-  gap: 10px;
-  align-items: center;
+  position: relative;
+  width: 248px;
+  height: 248px;
+  margin-right: 8px;
+  margin-bottom: 4px;
 }
 .abtn {
+  position: absolute;
+  width: 88px;
+  height: 88px;
+  font-size: 17px;
   border-radius: 999px;
   display: flex;
   align-items: center;
@@ -144,32 +147,12 @@ body.playing #gamepad { display: flex; }
   backdrop-filter: blur(3px);
   border: 1px solid rgba(255, 255, 255, 0.3) !important;
 }
-.abtn.pass {
-  grid-area: pass;
-  width: 72px; height: 72px;
-  font-size: 15px;
-  background: rgba(47, 123, 255, 0.7);
-}
-.abtn.shoot {
-  grid-area: shoot;
-  width: 92px; height: 92px;
-  font-size: 17px;
-  background: rgba(232, 68, 60, 0.78);
-}
-.abtn.sprint {
-  grid-area: sprint;
-  width: 54px; height: 54px;
-  font-size: 21px;
-  background: rgba(255, 207, 64, 0.72);
-  color: #3a2b00;
-}
-.abtn.switch {
-  grid-area: switch;
-  width: 58px; height: 58px;
-  font-size: 24px;
-  background: rgba(46, 191, 113, 0.75);
-}
-.abtn.pressed { filter: brightness(1.3); }
+/* offset = (248 - 88) / 2 = 80px, чтобы центры лежали на осях ромба */
+.abtn.sprint { top: 0;    left: 80px; background: rgba(255, 207, 64, 0.75); color: #3a2b00; font-size: 30px; }
+.abtn.pass   { bottom: 0; left: 80px; background: rgba(47, 123, 255, 0.72); }
+.abtn.switch { left: 0;   top: 80px;  background: rgba(46, 191, 113, 0.78); font-size: 30px; }
+.abtn.shoot  { right: 0;  top: 80px;  background: rgba(232, 68, 60, 0.82); }
+.abtn.pressed { filter: brightness(1.35); }
 
 /* ---------- Оверлей ---------- */
 #overlay {
@@ -233,15 +216,17 @@ button#startBtn:active { transform: scale(0.96); }
   #rotate { display: flex; }
 }
 
-/* Небольшие экраны в альбоме — ужимаем контролы. */
-@media (orientation: landscape) and (max-height: 430px) {
+/* Невысокие альбомные экраны — слегка ужимаем, но контролы остаются крупными. */
+@media (orientation: landscape) and (max-height: 420px) {
   #hud { padding: 4px 14px; }
-  #gamepad { padding: 0 16px calc(12px + env(safe-area-inset-bottom)) 16px; }
-  .stick { width: 112px; height: 112px; }
-  .knob { width: 52px; height: 52px; margin: -26px 0 0 -26px; }
-  .actions { gap: 8px; }
-  .abtn.shoot { width: 78px; height: 78px; }
-  .abtn.pass { width: 62px; height: 62px; }
-  .abtn.sprint { width: 48px; height: 48px; }
-  .abtn.switch { width: 50px; height: 50px; font-size: 21px; }
+  #gamepad { padding: 0 16px calc(10px + env(safe-area-inset-bottom)) 16px; }
+  .stick { width: 150px; height: 150px; margin-left: 24px; }
+  .knob { width: 70px; height: 70px; margin: -35px 0 0 -35px; }
+  .actions { width: 214px; height: 214px; }
+  .abtn { width: 78px; height: 78px; }
+  /* offset = (214 - 78) / 2 = 68px */
+  .abtn.sprint { left: 68px; }
+  .abtn.pass   { left: 68px; }
+  .abtn.switch { top: 68px; }
+  .abtn.shoot  { top: 68px; }
 }
