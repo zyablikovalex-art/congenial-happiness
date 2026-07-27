@@ -74,6 +74,31 @@ html, body {
   background: #06371c;
 }
 
+/* ---------- Шкала усилия ---------- */
+#powerbar {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  width: 46%;
+  max-width: 340px;
+  height: 16px;
+  padding: 3px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  z-index: 7;
+  pointer-events: none;
+}
+#powerbar[hidden] { display: none; }
+#powerfill {
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  background: #4a90ff;
+  transition: width 0.03s linear;
+}
+
 /* ---------- Экранный геймпад ---------- */
 #gamepad {
   position: absolute;

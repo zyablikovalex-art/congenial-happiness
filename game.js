@@ -33,8 +33,11 @@ const TACKLE_R = 28;      // радиус отбора (ИИ, автоматич
 const TACKLE_STEAL_R = 46;// радиус ручного отбора по кнопке «Пас»
 const STEAL_RATE = 2.2;   // вероятность отбора в секунду при контакте
 const DRIBBLE_AHEAD = 24; // насколько мяч выносится вперёд при ведении
-const PASS_SPEED = 285;
-const SHOT_SPEED = 415;
+// Сила паса/удара зависит от заряда шкалы усилия (min при коротком тапе, max при полном).
+const PASS_MIN = 220, PASS_MAX = 500;
+const SHOT_MIN = 360, SHOT_MAX = 620;
+const CHARGE_TIME = 0.8;  // сек до полного заряда
+const CHARGE_MIN = 0.32;  // доля силы при мгновенном тапе
 const GRAV = 900;
 const BOUNCE = 0.55;
 
@@ -173,7 +176,38 @@ document.addEventListener("touchend", (e) => {
    Ввод: экранный геймпад + клавиатура
    ========================================================================= */
 const pad = { sprint: false };
-const actionQueue = []; // 'pass' | 'shoot'
+const actionQueue = []; // 'switch' | {type:'pass'|'shoot'|'tackle', power}
+
+// Заряд усилия для паса/удара (удержание кнопки).
+const charge = { action: null, t: 0 };
+const barEl = document.getElementById("powerbar");
+const barFillEl = document.getElementById("powerfill");
+
+function showPowerBar(action, frac) {
+  if (!barEl || !barFillEl) return;
+  barEl.hidden = false;
+  barFillEl.style.width = Math.round(frac * 100) + "%";
+  barFillEl.style.background = action === "shoot" ? "#ff5a4d" : "#4a90ff";
+}
+function hidePowerBar() { if (barEl) barEl.hidden = true; }
+
+function beginPass() {
+  if (state !== "playing") return;
+  if (active && ball.owner === active) { charge.action = "pass"; charge.t = 0; }
+  else actionQueue.push({ type: "tackle" }); // мяч не у нас — сразу отбор
+}
+function beginShoot() {
+  if (state !== "playing") return;
+  if (active && ball.owner === active) { charge.action = "shoot"; charge.t = 0; }
+}
+function releaseCharge(action) {
+  if (charge.action !== action) return;
+  const f = CHARGE_MIN + Math.min(1, charge.t / CHARGE_TIME) * (1 - CHARGE_MIN);
+  actionQueue.push({ type: action, power: f });
+  charge.action = null; charge.t = 0;
+  hidePowerBar();
+}
+function resetCharge() { charge.action = null; charge.t = 0; hidePowerBar(); }
 
 // Экранный джойстик (аналоговый). База зафиксирована, ручка тянется к пальцу.
 const stick = { active: false, id: null, cx: 0, cy: 0, jx: 0, jy: 0, R: 46 };
@@ -214,23 +248,24 @@ if (stickEl) {
   stickEl.addEventListener("contextmenu", (e) => e.preventDefault());
 }
 
-// Кнопки действий: Спринт (удержание), Пас/Отбор, Удар
+// Кнопки действий: ⚡Спринт (удержание), ⇄Смена (тап), ПАС/Отбор и УДАР (заряд).
 if (el.gamepad) {
   el.gamepad.querySelectorAll("[data-btn]").forEach((btn) => {
     const name = btn.dataset.btn;
     const press = (e) => {
       e.preventDefault();
       btn.classList.add("pressed");
-      if (name === "pass" || name === "shoot") {
-        if (state === "playing") actionQueue.push(name);
-      } else {
-        pad[name] = true;
-      }
+      if (name === "pass") beginPass();
+      else if (name === "shoot") beginShoot();
+      else if (name === "switch") { if (state === "playing") actionQueue.push("switch"); }
+      else pad[name] = true; // sprint
       try { btn.setPointerCapture(e.pointerId); } catch (_) {}
     };
     const release = (e) => {
       btn.classList.remove("pressed");
-      if (name !== "pass" && name !== "shoot") pad[name] = false;
+      if (name === "pass") releaseCharge("pass");
+      else if (name === "shoot") releaseCharge("shoot");
+      else if (name !== "switch") pad[name] = false;
     };
     btn.addEventListener("pointerdown", press);
     btn.addEventListener("pointerup", release);
@@ -249,12 +284,17 @@ window.addEventListener("keydown", (e) => {
   if (keyHeld.has(k)) return; // без автоповтора
   keyHeld.add(k);
   if (state === "playing") {
-    if (k === "j" || k === " ") actionQueue.push("pass");
-    if (k === "l" || k === "enter") actionQueue.push("shoot");
+    if (k === "j" || k === " ") beginPass();
+    if (k === "l" || k === "enter") beginShoot();
     if (k === "k") actionQueue.push("switch");
   }
 });
-window.addEventListener("keyup", (e) => keyHeld.delete(e.key.toLowerCase()));
+window.addEventListener("keyup", (e) => {
+  const k = e.key.toLowerCase();
+  keyHeld.delete(k);
+  if (k === "j" || k === " ") releaseCharge("pass");
+  if (k === "l" || k === "enter") releaseCharge("shoot");
+});
 
 function inputVector() {
   // Клавиатура (дискретно, полная скорость)
@@ -314,47 +354,49 @@ function kick(power, dx, dz, loft) {
   if (loft > 0) ball.h = Math.max(ball.h, 1);
 }
 
-function doShoot(p) {
+// f — доля усилия [0..1]. Для ИИ по умолчанию берём среднюю силу.
+function doShoot(p, f) {
   if (!p || ball.owner !== p) return;
+  if (f == null) f = 0.85;
   const goalX = p.team === 0 ? PITCH_L : 0;
   const targetZ = PITCH_W / 2;
   const dx = goalX - p.x, dz = targetZ - p.z, d = hyp(dx, dz) || 1;
-  kick(SHOT_SPEED, dx / d, dz / d, 150);
+  const speed = SHOT_MIN + f * (SHOT_MAX - SHOT_MIN);
+  const loft = 90 + f * 90;
+  kick(speed, dx / d, dz / d, loft);
 }
 
-function doPass(p) {
+function doPass(p, f) {
   if (!p || ball.owner !== p) return;
+  if (f == null) f = 0.7;
   const attackDir = p.team === 0 ? 1 : -1;
+  const speed = PASS_MIN + f * (PASS_MAX - PASS_MIN);
   let best = null, bestScore = -1e9;
   for (const t of players) {
     if (t.team !== p.team || t === p || t.isGK) continue;
     const dx = t.x - p.x, dz = t.z - p.z, d = hyp(dx, dz);
-    if (d < 40 || d > 360) continue;
+    if (d < 40 || d > 420) continue;
     const forward = dx * attackDir;              // хотим вперёд, к воротам соперника
     const facingBonus = (dx * p.dirx + dz * p.dirz) / (d || 1) * 60;
     const score = forward * 1.0 - Math.abs(dz) * 0.25 - d * 0.1 + facingBonus;
     if (score > bestScore) { bestScore = score; best = t; }
   }
-  if (!best) { kick(PASS_SPEED, attackDir, 0, 0); return; }
-  const lx = best.x + attackDir * 22, lz = best.z; // небольшой вынос под ход
+  if (!best) { kick(speed, attackDir, 0, 0); return; } // аварийный вынос вперёд
+  const lx = best.x + attackDir * 22, lz = best.z;     // небольшой вынос под ход
   const dx = lx - p.x, dz = lz - p.z, d = hyp(dx, dz) || 1;
-  const power = Math.min(PASS_SPEED, 150 + d * 1.4);
-  kick(power, dx / d, dz / d, 0);
+  kick(speed, dx / d, dz / d, 0);
 }
 
-// Кнопка «Пас»: если мяч у нас — пас; иначе — попытка отбора/перехвата.
-function doPassOrTackle(p) {
-  if (!p) return;
-  if (ball.owner === p) { doPass(p); return; }
-  // Рывок к мячу — делает отбор отзывчивым даже с небольшой дистанции.
+// Отбор/перехват: рывок к мячу и захват при сближении.
+function doTackle(p) {
+  if (!p || ball.owner === p) return;
   const dx = ball.x - p.x, dz = ball.z - p.z, d = hyp(dx, dz) || 1;
-  p.vx += dx / d * 90; p.vz += dz / d * 90;
+  p.vx += dx / d * 90; p.vz += dz / d * 90; // рывок делает отбор отзывчивым
   if (d < TACKLE_STEAL_R) {
     if (ball.owner && ball.owner.team !== p.team) {
-      // Отбор у соперника (не гарантирован при большой скорости мяча/дистанции)
-      ball.owner = p; ball.cooldown = 0.05;
+      ball.owner = p; ball.cooldown = 0.05; // отбор у соперника
     } else if (!ball.owner) {
-      ball.owner = p; ball.cooldown = 0; // перехват свободного мяча
+      ball.owner = p; ball.cooldown = 0;     // перехват свободного мяча
     }
   }
 }
@@ -372,7 +414,7 @@ function updateFreeBall(dt) {
     ball.h = 0;
     if (ball.vh < 0) ball.vh = -ball.vh * BOUNCE;
     if (Math.abs(ball.vh) < 30) ball.vh = 0;
-    const fr = Math.exp(-1.9 * dt); // трение о газон
+    const fr = Math.exp(-1.35 * dt); // трение о газон (мяч катится дальше)
     ball.vx *= fr; ball.vz *= fr;
   } else {
     const fr = Math.exp(-0.35 * dt);
@@ -561,6 +603,7 @@ function kickoffReset(kickTeam) {
   const starter = fwd || players.find((p) => p.team === kickTeam && !p.isGK);
   if (starter) { starter.x = PITCH_L / 2; starter.z = PITCH_W / 2 + 6; }
   camX = camClamp(PITCH_L / 2); // камера в центр без долгой прокрутки
+  resetCharge();
 }
 
 function scoreGoal(who) {
@@ -604,12 +647,23 @@ function step(dt) {
 
   pickActive();
 
+  // Накопление заряда усилия, пока держим ПАС/УДАР.
+  if (charge.action) {
+    // Если по какой-то причине потеряли мяч во время заряда — отменяем.
+    if (!active || ball.owner !== active) resetCharge();
+    else {
+      charge.t = Math.min(CHARGE_TIME, charge.t + dt);
+      showPowerBar(charge.action, charge.t / CHARGE_TIME);
+    }
+  }
+
   // Действия игрока
   while (actionQueue.length) {
     const a = actionQueue.shift();
     if (a === "switch") cycleActivePlayer();
-    else if (a === "pass") doPassOrTackle(active);
-    else if (a === "shoot") doShoot(active);
+    else if (a.type === "tackle") doTackle(active);
+    else if (a.type === "pass") doPass(active, a.power);
+    else if (a.type === "shoot") doShoot(active, a.power);
   }
 
   // Ход всех игроков
@@ -891,6 +945,8 @@ function startMatch() {
 function endMatch() {
   state = "over";
   document.body.classList.remove("playing");
+  resetCharge();
+  pad.sprint = false;
   let title;
   if (scoreYou > scoreCpu) title = "Победа! 🏆";
   else if (scoreYou < scoreCpu) title = "Поражение 😔";
