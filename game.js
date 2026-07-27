@@ -11,8 +11,8 @@
 
 // ---- Мир ----
 const PITCH_L = 1200;     // длина поля (ось x: 0 — левые ворота, PITCH_L — правые)
-const PITCH_W = 720;      // ширина/глубина (ось z: 0 — ближняя бровка, PITCH_W — дальняя)
-const GOAL_HALF = 112;    // половина ширины створа ворот (по z)
+const PITCH_W = 900;      // ширина/глубина (ось z: 0 — ближняя бровка, PITCH_W — дальняя) — шире
+const GOAL_HALF = 140;    // половина ширины створа ворот (по z)
 const VIS_NEAR = 554;     // сколько мировых единиц длины видно у ближней бровки
                           // (< PITCH_L => всё поле не влезает, камера ездит).
                           // Меньше => поле крупнее на экране при тех же игроках.
@@ -25,10 +25,10 @@ const MOUTH_HI = PITCH_W / 2 + GOAL_HALF;
 
 // ---- Тюнинг ----
 const MATCH_SECONDS = 120;
-const SPEED = 132;        // базовая скорость игрока (мир/сек) — темп снижен
-const SPRINT = 188;       // скорость со спринтом
-const GK_SPEED = 118;
-const ACCEL = 820;
+const SPEED = 106;        // базовая скорость игрока (мир/сек) — темп снижен ещё на 20%
+const SPRINT = 150;       // скорость со спринтом
+const GK_SPEED = 94;
+const ACCEL = 680;
 const CTRL_R = 27;        // радиус получения контроля над мячом
 const TACKLE_R = 28;      // радиус отбора (ИИ, автоматический)
 const TACKLE_STEAL_R = 46;// радиус ручного отбора по кнопке «Пас»
@@ -64,11 +64,11 @@ function resize() {
 
   P.cssW = cssW; P.cssH = cssH; P.dpr = dpr;
   P.CX = cssW / 2;
-  P.FAR_Y = cssH * 0.12;   // дальняя бровка выше, ближняя ниже => больше глубины
-  P.NEAR_Y = cssH * 0.90;
+  P.FAR_Y = cssH * 0.11;   // дальняя бровка выше, ближняя ниже => больше глубины
+  P.NEAR_Y = cssH * 0.92;
   // Масштаб длины: у ближней бровки на весь экран влезает VIS_NEAR единиц.
   P.ppuNear = cssW / VIS_NEAR;
-  P.ppuFar = P.ppuNear * 0.66;  // дальше — сильнее сжато (перспектива)
+  P.ppuFar = P.ppuNear * 0.74;  // меньше сужение дальней бровки => поле шире, заполняет углы
   P.NEAR_SCALE = clamp(cssH / 430, 0.9, 2.0);
   P.FAR_SCALE = P.NEAR_SCALE * 0.62;
 }
@@ -786,10 +786,10 @@ function drawPitch() {
   fieldPoly(0, PITCH_L, 0, PITCH_W); ctx.stroke();
   // Средняя линия + центральный круг
   lineWorld(PITCH_L / 2, 0, PITCH_L / 2, PITCH_W);
-  ellipseWorld(PITCH_L / 2, PITCH_W / 2, 96, 84);
+  ellipseWorld(PITCH_L / 2, PITCH_W / 2, 96, 105);
 
   // Штрафные площади
-  const boxD = 170, boxHalf = 210;
+  const boxD = 170, boxHalf = 262;
   fieldPoly(0, boxD, PITCH_W / 2 - boxHalf, PITCH_W / 2 + boxHalf); ctx.stroke();
   fieldPoly(PITCH_L - boxD, PITCH_L, PITCH_W / 2 - boxHalf, PITCH_W / 2 + boxHalf); ctx.stroke();
 
