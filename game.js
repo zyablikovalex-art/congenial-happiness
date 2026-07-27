@@ -10,9 +10,11 @@
    ========================================================================= */
 
 // ---- Мир ----
-const PITCH_L = 940;      // длина поля (ось x: 0 — левые ворота, PITCH_L — правые)
-const PITCH_W = 640;      // ширина/глубина (ось z: 0 — ближняя бровка, PITCH_W — дальняя)
-const GOAL_HALF = 104;    // половина ширины створа ворот (по z)
+const PITCH_L = 1200;     // длина поля (ось x: 0 — левые ворота, PITCH_L — правые)
+const PITCH_W = 720;      // ширина/глубина (ось z: 0 — ближняя бровка, PITCH_W — дальняя)
+const GOAL_HALF = 112;    // половина ширины створа ворот (по z)
+const VIS_NEAR = 720;     // сколько мировых единиц длины видно у ближней бровки
+                          // (< PITCH_L => всё поле не влезает, камера ездит)
 const GOAL_DEPTH_H = 130; // макс. высота мяча, при которой он ещё влетает в ворота
 const PLR_R = 15;         // радиус игрока (мир)
 const BALL_R = 8;
@@ -22,17 +24,17 @@ const MOUTH_HI = PITCH_W / 2 + GOAL_HALF;
 
 // ---- Тюнинг ----
 const MATCH_SECONDS = 120;
-const SPEED = 178;        // базовая скорость игрока (мир/сек)
-const SPRINT = 250;       // скорость со спринтом
-const GK_SPEED = 158;
-const ACCEL = 1000;
-const CTRL_R = 26;        // радиус получения контроля над мячом
-const TACKLE_R = 27;      // радиус отбора (ИИ, автоматический)
-const TACKLE_STEAL_R = 42;// радиус ручного отбора по кнопке «Пас»
+const SPEED = 132;        // базовая скорость игрока (мир/сек) — темп снижен
+const SPRINT = 188;       // скорость со спринтом
+const GK_SPEED = 118;
+const ACCEL = 820;
+const CTRL_R = 27;        // радиус получения контроля над мячом
+const TACKLE_R = 28;      // радиус отбора (ИИ, автоматический)
+const TACKLE_STEAL_R = 46;// радиус ручного отбора по кнопке «Пас»
 const STEAL_RATE = 2.2;   // вероятность отбора в секунду при контакте
-const DRIBBLE_AHEAD = 22; // насколько мяч выносится вперёд при ведении
-const PASS_SPEED = 360;
-const SHOT_SPEED = 545;
+const DRIBBLE_AHEAD = 24; // насколько мяч выносится вперёд при ведении
+const PASS_SPEED = 285;
+const SHOT_SPEED = 415;
 const GRAV = 900;
 const BOUNCE = 0.55;
 
@@ -43,9 +45,10 @@ const ctx = canvas.getContext("2d");
 const P = {
   cssW: 480, cssH: 800, dpr: 1,
   CX: 240, FAR_Y: 130, NEAR_Y: 560,
-  NEAR_HALFW: 226, FAR_HALFW: 130,
+  ppuNear: 1, ppuFar: 0.68,     // пикселей на мировую единицу длины (ближняя/дальняя бровка)
   NEAR_SCALE: 1, FAR_SCALE: 0.56,
 };
+let camX = PITCH_L / 2;          // центр камеры по длине поля (едет за мячом)
 
 function resize() {
   const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
@@ -59,20 +62,27 @@ function resize() {
   P.CX = cssW / 2;
   P.FAR_Y = cssH * 0.15;
   P.NEAR_Y = cssH * 0.88;
-  P.NEAR_HALFW = cssW * 0.49;   // ближняя бровка — почти на всю ширину
-  P.FAR_HALFW = cssW * 0.34;    // дальняя пошире (меньше сужение) => поле шире
-  P.NEAR_SCALE = clamp(cssH / 540, 0.8, 1.7);
-  P.FAR_SCALE = P.NEAR_SCALE * 0.6;
+  // Масштаб длины: у ближней бровки на весь экран влезает VIS_NEAR единиц.
+  P.ppuNear = cssW / VIS_NEAR;
+  P.ppuFar = P.ppuNear * 0.66;  // дальше — сильнее сжато (перспектива)
+  P.NEAR_SCALE = clamp(cssH / 430, 0.9, 2.0);
+  P.FAR_SCALE = P.NEAR_SCALE * 0.62;
 }
 window.addEventListener("resize", resize);
+
+// Допустимый диапазон камеры: у ближней бровки не выходим за пределы поля.
+function camClamp(x) {
+  const half = VIS_NEAR / 2;
+  return clamp(x, half, PITCH_L - half);
+}
 
 // Мир -> экран. h — высота мяча над газоном (мировые единицы).
 function project(x, z, h) {
   const t = z / PITCH_W;                       // 0 — ближе (низ, крупнее), 1 — дальше
   const scale = P.NEAR_SCALE + (P.FAR_SCALE - P.NEAR_SCALE) * t;
   const gy = P.NEAR_Y + (P.FAR_Y - P.NEAR_Y) * t;
-  const hw = P.NEAR_HALFW + (P.FAR_HALFW - P.NEAR_HALFW) * t;
-  const sx = P.CX + ((x / PITCH_L) - 0.5) * 2 * hw;
+  const ppu = P.ppuNear + (P.ppuFar - P.ppuNear) * t;
+  const sx = P.CX + (x - camX) * ppu;
   const sy = gy - (h || 0) * 0.7 * scale;
   return { sx, sy, scale };
 }
@@ -218,12 +228,13 @@ const keyHeld = new Set();
 const MOVE_KEYS = ["arrowup", "arrowdown", "arrowleft", "arrowright", "w", "a", "s", "d"];
 window.addEventListener("keydown", (e) => {
   const k = e.key.toLowerCase();
-  if (MOVE_KEYS.includes(k) || k === " " || k === "shift" || k === "j" || k === "l") e.preventDefault();
+  if (MOVE_KEYS.includes(k) || k === " " || k === "shift" || k === "j" || k === "l" || k === "k") e.preventDefault();
   if (keyHeld.has(k)) return; // без автоповтора
   keyHeld.add(k);
   if (state === "playing") {
     if (k === "j" || k === " ") actionQueue.push("pass");
     if (k === "l" || k === "enter") actionQueue.push("shoot");
+    if (k === "k") actionQueue.push("switch");
   }
 });
 window.addEventListener("keyup", (e) => keyHeld.delete(e.key.toLowerCase()));
@@ -468,12 +479,29 @@ function aiControl(p, dt) {
   moveTo(p, tx, tz, spd, dt);
 }
 
+let manualHold = 0; // сек, в течение которых уважаем ручной выбор игрока
+
 function pickActive() {
-  if (ball.owner && ball.owner.team === 0) { active = ball.owner; return; }
+  // Владеем мячом — управляем владельцем всегда.
+  if (ball.owner && ball.owner.team === 0) { active = ball.owner; manualHold = 0; return; }
   const [n] = nearestFieldToBall(0);
   if (!active || active.isGK || active.team !== 0) { active = n; return; }
+  // Игрок вручную выбрал игрока — не перехватываем управление автоматически.
+  if (manualHold > 0) return;
   if (n && n !== active && dist(n, ball) + 14 < dist(active, ball)) active = n;
   if (!active) active = n;
+}
+
+// Ручная смена управляемого игрока (кнопка «Смена»). Циклично по игрокам
+// команды 0, отсортированным по близости к мячу.
+function cycleActivePlayer() {
+  if (ball.owner && ball.owner.team === 0) return; // владеем — смена не нужна
+  const field = players.filter((p) => p.team === 0 && !p.isGK);
+  field.sort((a, b) => dist(a, ball) - dist(b, ball));
+  if (!field.length) return;
+  const idx = field.indexOf(active);
+  active = field[(idx + 1) % field.length];
+  manualHold = 1.6;
 }
 
 function userMove(p, dt) {
@@ -515,6 +543,7 @@ function kickoffReset(kickTeam) {
   const fwd = players.find((p) => p.team === kickTeam && !p.isGK && p.home.x === (kickTeam === 0 ? 0.66 * PITCH_L : (1 - 0.66) * PITCH_L));
   const starter = fwd || players.find((p) => p.team === kickTeam && !p.isGK);
   if (starter) { starter.x = PITCH_L / 2; starter.z = PITCH_W / 2 + 6; }
+  camX = camClamp(PITCH_L / 2); // камера в центр без долгой прокрутки
 }
 
 function scoreGoal(who) {
@@ -549,6 +578,8 @@ function frame(ts) {
 }
 
 function step(dt) {
+  if (manualHold > 0) manualHold -= dt;
+
   // Кого прессинговать
   const n0 = nearestFieldToBall(0), n1 = nearestFieldToBall(1);
   chaser[0] = n0[0]; chaser2[0] = n0[1];
@@ -559,7 +590,8 @@ function step(dt) {
   // Действия игрока
   while (actionQueue.length) {
     const a = actionQueue.shift();
-    if (a === "pass") doPassOrTackle(active);
+    if (a === "switch") cycleActivePlayer();
+    else if (a === "pass") doPassOrTackle(active);
     else if (a === "shoot") doShoot(active);
   }
 
@@ -576,6 +608,10 @@ function step(dt) {
   if (ball.owner) glueBall();
 
   separatePlayers();
+
+  // Камера едет за мячом по длине поля (плавно).
+  const target = camClamp(ball.x);
+  camX += (target - camX) * Math.min(1, 2.6 * dt);
 
   const m = Math.floor(timeLeft / 60), s = Math.floor(timeLeft % 60);
   el.clock.textContent = `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
@@ -661,10 +697,10 @@ function drawPitch() {
   fieldPoly(0, PITCH_L, 0, PITCH_W); ctx.stroke();
   // Средняя линия + центральный круг
   lineWorld(PITCH_L / 2, 0, PITCH_L / 2, PITCH_W);
-  ellipseWorld(PITCH_L / 2, PITCH_W / 2, 70, 62);
+  ellipseWorld(PITCH_L / 2, PITCH_W / 2, 96, 84);
 
   // Штрафные площади
-  const boxD = 130, boxHalf = 150;
+  const boxD = 170, boxHalf = 210;
   fieldPoly(0, boxD, PITCH_W / 2 - boxHalf, PITCH_W / 2 + boxHalf); ctx.stroke();
   fieldPoly(PITCH_L - boxD, PITCH_L, PITCH_W / 2 - boxHalf, PITCH_W / 2 + boxHalf); ctx.stroke();
 

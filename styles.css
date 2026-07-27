@@ -131,8 +131,9 @@ body.playing #gamepad { display: flex; }
   grid-template-columns: auto auto;
   grid-template-areas:
     "sprint shoot"
+    "switch shoot"
     "pass   shoot";
-  gap: 12px;
+  gap: 10px;
   align-items: center;
 }
 .abtn {
@@ -145,7 +146,7 @@ body.playing #gamepad { display: flex; }
 }
 .abtn.pass {
   grid-area: pass;
-  width: 74px; height: 74px;
+  width: 72px; height: 72px;
   font-size: 15px;
   background: rgba(47, 123, 255, 0.7);
 }
@@ -157,10 +158,16 @@ body.playing #gamepad { display: flex; }
 }
 .abtn.sprint {
   grid-area: sprint;
-  width: 56px; height: 56px;
-  font-size: 22px;
+  width: 54px; height: 54px;
+  font-size: 21px;
   background: rgba(255, 207, 64, 0.72);
   color: #3a2b00;
+}
+.abtn.switch {
+  grid-area: switch;
+  width: 58px; height: 58px;
+  font-size: 24px;
+  background: rgba(46, 191, 113, 0.75);
 }
 .abtn.pressed { filter: brightness(1.3); }
 
@@ -229,9 +236,12 @@ button#startBtn:active { transform: scale(0.96); }
 /* Небольшие экраны в альбоме — ужимаем контролы. */
 @media (orientation: landscape) and (max-height: 430px) {
   #hud { padding: 4px 14px; }
-  .stick { width: 116px; height: 116px; }
-  .knob { width: 54px; height: 54px; margin: -27px 0 0 -27px; }
-  .abtn.shoot { width: 82px; height: 82px; }
-  .abtn.pass { width: 66px; height: 66px; }
-  .abtn.sprint { width: 50px; height: 50px; }
+  #gamepad { padding: 0 16px calc(12px + env(safe-area-inset-bottom)) 16px; }
+  .stick { width: 112px; height: 112px; }
+  .knob { width: 52px; height: 52px; margin: -26px 0 0 -26px; }
+  .actions { gap: 8px; }
+  .abtn.shoot { width: 78px; height: 78px; }
+  .abtn.pass { width: 62px; height: 62px; }
+  .abtn.sprint { width: 48px; height: 48px; }
+  .abtn.switch { width: 50px; height: 50px; font-size: 21px; }
 }
