@@ -649,6 +649,8 @@ function frame(ts) {
     if (celebrate > 0) celebrate -= dt;
     if (timeLeft <= 0) { timeLeft = 0; endMatch(); }
     else step(dt);
+  } else if (state === "intro") {
+    stepIntro(dt);
   }
 
   draw();
@@ -712,6 +714,7 @@ function step(dt) {
 function draw() {
   ctx.clearRect(0, 0, P.cssW, P.cssH);
   drawStands();
+  drawTunnel();
   drawPitch();
 
   // Сортировка по глубине: дальние (большой z) рисуем раньше
@@ -721,6 +724,7 @@ function draw() {
   order.sort((a, b) => b.z - a.z);
   for (const o of order) { if (o.ball) drawBall(); else drawPerson(o.p); }
 
+  if (state === "intro") drawIntro();
   if (celebrate > 0) drawGoalFlash();
 }
 
@@ -947,17 +951,175 @@ function roundRect(x, y, w, h, r) {
 }
 
 /* =========================================================================
+   Заставка перед матчем: выход из тоннеля, салюты, отсчёт, свисток, GO
+   ========================================================================= */
+const INTRO_WALK = 2.8;                     // выход команд из тоннеля
+const INTRO_CD = 1.5;                       // обратный отсчёт 3-2-1
+const INTRO_GO_AT = INTRO_WALK + INTRO_CD;  // момент свистка + «GO»
+const INTRO_END = INTRO_GO_AT + 0.9;
+const tunnel = { x: PITCH_L / 2, z: PITCH_W - 6 };
+let introT = 0, introWhistled = false;
+const fireworks = [];
+let fwTimer = 0, fwSeed = 1;
+
+// Звук свистка через Web Audio (контекст создаём по жесту — клику «Играть»).
+let audioCtx = null;
+function ensureAudio() {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === "suspended") audioCtx.resume();
+  } catch (_) {}
+}
+function whistle() {
+  if (!audioCtx) return;
+  try {
+    const t0 = audioCtx.currentTime;
+    [0, 0.24].forEach((off) => {
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.type = "square";
+      o.frequency.setValueAtTime(2050, t0 + off);
+      o.frequency.setValueAtTime(2320, t0 + off + 0.05);
+      o.frequency.setValueAtTime(2050, t0 + off + 0.10);
+      g.gain.setValueAtTime(0.0001, t0 + off);
+      g.gain.exponentialRampToValueAtTime(0.28, t0 + off + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + off + 0.20);
+      o.connect(g); g.connect(audioCtx.destination);
+      o.start(t0 + off); o.stop(t0 + off + 0.22);
+    });
+  } catch (_) {}
+}
+
+const FW_COLORS = ["#ffe14d", "#ff6b6b", "#5ac8fa", "#7cfc98", "#ffffff", "#ff8f6b"];
+function spawnFirework() {
+  const cx = 30 + nrand(fwSeed * 2.3 + 1) * (P.cssW - 60);
+  const cy = 16 + nrand(fwSeed * 3.7 + 2) * (P.cssH * 0.34);
+  const col = FW_COLORS[Math.floor(nrand(fwSeed * 5.1) * FW_COLORS.length) % FW_COLORS.length];
+  const n = 20 + Math.floor(nrand(fwSeed * 1.9) * 12);
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    const sp = 50 + nrand(fwSeed * 7.7 + i) * 80;
+    fireworks.push({
+      x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 20,
+      life: 0.8 + nrand(fwSeed * 2.2 + i) * 0.6, max: 1.4,
+      size: 1.6 + nrand(i * 1.7) * 1.4, color: col,
+    });
+  }
+  fwSeed++;
+}
+
+function stepIntro(dt) {
+  introT += dt;
+  // Выход игроков из тоннеля к своим позициям (со стаггером — по одному).
+  if (introT < INTRO_WALK) {
+    for (const p of players) {
+      const delay = (p.id / players.length) * (INTRO_WALK * 0.35);
+      const prog = clamp((introT - delay) / (INTRO_WALK * 0.6), 0, 1);
+      const e = prog * prog * (3 - 2 * prog); // smoothstep
+      p.x = tunnel.x + (p.home.x - tunnel.x) * e;
+      p.z = tunnel.z + (p.home.z - tunnel.z) * e;
+      const moving = prog > 0.001 && prog < 0.999;
+      p.vx = moving ? 30 : 0; p.vz = 0;
+      if (moving) p.runPhase += 7 * dt;
+      p.dirx = p.team === 0 ? 1 : -1; p.dirz = 0;
+    }
+  } else {
+    for (const p of players) { p.x = p.home.x; p.z = p.home.z; p.vx = 0; p.vz = 0; }
+  }
+  camX = camClamp(PITCH_L / 2);
+
+  // Салюты
+  fwTimer -= dt;
+  if (fwTimer <= 0 && introT < INTRO_END - 0.1) { spawnFirework(); fwTimer = 0.28 + nrand(fwSeed * 1.3) * 0.35; }
+  for (let i = fireworks.length - 1; i >= 0; i--) {
+    const f = fireworks[i];
+    f.x += f.vx * dt; f.y += f.vy * dt; f.vy += 130 * dt; f.life -= dt;
+    if (f.life <= 0) fireworks.splice(i, 1);
+  }
+
+  if (!introWhistled && introT >= INTRO_GO_AT) { introWhistled = true; whistle(); }
+  if (introT >= INTRO_END) beginPlay();
+}
+
+function beginPlay() {
+  kickoffReset(0);            // чистое вбрасывание в центр
+  active = null;
+  state = "playing";
+  document.body.classList.add("playing");
+}
+
+function drawTunnel() {
+  const base = project(tunnel.x, PITCH_W, 0);
+  const w = 120 * P.ppuFar, h = 28;
+  ctx.fillStyle = "#0a0d12";
+  roundRect(base.sx - w / 2, base.sy - h, w, h + 8, 6); ctx.fill();
+  ctx.fillStyle = "#04060a";
+  roundRect(base.sx - w / 2 + 6, base.sy - h + 4, w - 12, h - 2, 4); ctx.fill();
+  ctx.strokeStyle = "rgba(255,255,255,0.18)"; ctx.lineWidth = 2;
+  roundRect(base.sx - w / 2, base.sy - h, w, h + 8, 6); ctx.stroke();
+}
+
+function drawIntro() {
+  // Салюты (в воздухе — поверх сцены)
+  for (const f of fireworks) {
+    ctx.globalAlpha = Math.max(0, Math.min(1, f.life / f.max));
+    ctx.fillStyle = f.color;
+    ctx.beginPath(); ctx.arc(f.x, f.y, f.size, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  if (introT < INTRO_WALK) {
+    ctx.fillStyle = "rgba(255,255,255,0.95)";
+    ctx.font = `bold ${Math.round(P.cssW * 0.04)}px system-ui, sans-serif`;
+    ctx.fillText("ВЫХОД КОМАНД ⚽", P.cssW / 2, P.cssH * 0.11);
+    ctx.fillStyle = "rgba(255,255,255,0.6)";
+    ctx.font = `${Math.round(P.cssW * 0.02)}px system-ui, sans-serif`;
+    ctx.fillText("тап — пропустить", P.cssW / 2, P.cssH * 0.11 + P.cssW * 0.042);
+  } else if (introT < INTRO_GO_AT) {
+    const step = INTRO_CD / 3;
+    const n = Math.max(1, 3 - Math.floor((introT - INTRO_WALK) / step));
+    const within = ((introT - INTRO_WALK) % step) / step;
+    const s = 1 + (1 - within) * 0.7;
+    ctx.save();
+    ctx.translate(P.cssW / 2, P.cssH * 0.44); ctx.scale(s, s);
+    ctx.globalAlpha = Math.min(1, 0.4 + within);
+    ctx.fillStyle = "#ffffff";
+    ctx.font = `bold ${Math.round(P.cssW * 0.12)}px system-ui, sans-serif`;
+    ctx.fillText(String(n), 0, 0);
+    ctx.restore(); ctx.globalAlpha = 1;
+  } else {
+    const k = (introT - INTRO_GO_AT) / 0.9;
+    ctx.save();
+    ctx.translate(P.cssW / 2, P.cssH * 0.44); ctx.scale(1 + k * 0.9, 1 + k * 0.9);
+    ctx.globalAlpha = Math.max(0, 1 - k);
+    ctx.fillStyle = "#ffe14d";
+    ctx.font = `bold ${Math.round(P.cssW * 0.17)}px system-ui, sans-serif`;
+    ctx.fillText("GO!", 0, 0);
+    ctx.restore(); ctx.globalAlpha = 1;
+  }
+}
+
+// Тап во время заставки — пропустить к свистку.
+canvas.addEventListener("pointerdown", () => {
+  if (state === "intro" && introT < INTRO_GO_AT) introT = INTRO_GO_AT;
+});
+
+/* =========================================================================
    Потоки: меню / матч / итог
    ========================================================================= */
 function startMatch() {
   scoreYou = 0; scoreCpu = 0; timeLeft = MATCH_SECONDS; celebrate = 0; F = 0;
   el.scoreYou.textContent = "0";
   el.scoreCpu.textContent = "0";
+  const mm = Math.floor(MATCH_SECONDS / 60), ss = MATCH_SECONDS % 60;
+  el.clock.textContent = `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
   kickoffReset(0);
   active = null;
-  state = "playing";
+  ensureAudio();
+  introT = 0; introWhistled = false; fireworks.length = 0; fwTimer = 0; fwSeed = 1;
+  state = "intro";
   el.overlay.classList.remove("show");
-  document.body.classList.add("playing");
+  document.body.classList.remove("playing"); // геймпад скрыт во время заставки
 }
 
 function endMatch() {
