@@ -9,8 +9,11 @@ window.Scene3D = (function () {
   const T = window.THREE;
   const S = 0.02; // мир -> три единицы
 
+  const RUNOFF = 300; // мировых единиц газона за каждой линией (видно, когда камера у бровки)
+
   let cfg, renderer, scene, camera;
   let L, W, halfL, halfW, MOUTH_LO, MOUTH_HI, GOAL_HALF;
+  let groundHalfX, groundHalfZ; // половина размера газона в единицах сцены
   let ballMesh, ballGroup;
   const playerMeshes = []; // индекс = id игрока
   let sceneTime = 0;
@@ -42,12 +45,18 @@ window.Scene3D = (function () {
 
   // ---- Текстура газона (вид сверху) ----
   function pitchTexture() {
-    const TW = 2048, TH = 1536, M = 150; // поля-марджины
+    const TW = 2048, TH = 1600;
+    // Марджины пропорциональны RUNOFF, чтобы разметка ложилась ровно на
+    // логические границы поля (0..L, 0..W), а за ними оставался газон.
+    const Mx = TW * RUNOFF / (L + 2 * RUNOFF);
+    const My = TH * RUNOFF / (W + 2 * RUNOFF);
     const c = document.createElement("canvas");
     c.width = TW; c.height = TH;
     const g = c.getContext("2d");
-    const px = (wx) => M + (wx / L) * (TW - 2 * M);
-    const py = (wz) => M + (wz / W) * (TH - 2 * M);
+    const px = (wx) => Mx + (wx / L) * (TW - 2 * Mx);
+    const py = (wz) => My + (wz / W) * (TH - 2 * My);
+    const lx = (w) => (w / L) * (TW - 2 * Mx);   // длина по x в пикселях текстуры
+    const lz = (w) => (w / W) * (TH - 2 * My);   // длина по z в пикселях текстуры
 
     // Полосатый газон (вертикальные полосы вдоль длины)
     const stripes = 14;
@@ -64,12 +73,12 @@ window.Scene3D = (function () {
     g.beginPath(); g.moveTo(px(L / 2), py(0)); g.lineTo(px(L / 2), py(W)); g.stroke();
     // Центральный круг + точка
     g.beginPath();
-    g.ellipse(px(L / 2), py(W / 2), (110 / L) * (TW - 2 * M), (110 / W) * (TH - 2 * M), 0, 0, Math.PI * 2);
+    g.ellipse(px(L / 2), py(W / 2), lx(190), lz(190), 0, 0, Math.PI * 2);
     g.stroke();
     g.fillStyle = "#fff";
     g.beginPath(); g.arc(px(L / 2), py(W / 2), 8, 0, Math.PI * 2); g.fill();
     // Штрафные + вратарские + точки пенальти
-    const boxD = 170, boxHalf = 262, gaD = 66, gaHalf = 150, penX = 128;
+    const boxD = 300, boxHalf = 430, gaD = 110, gaHalf = 240, penX = 220;
     [0, 1].forEach((side) => {
       const s = side === 0 ? 1 : -1;
       const gx = side === 0 ? 0 : L;
@@ -243,33 +252,26 @@ window.Scene3D = (function () {
   }
 
   // ---- Трибуны ----
+  // Четыре наклонённые назад стены-«чаши», вынесенные за газон, чтобы камера,
+  // опускаясь к ближней бровке, не упиралась в них.
   function makeStands() {
     const grp = new T.Group();
-    const tex = crowdTexture();
-    const standMat = new T.MeshStandardMaterial({ map: tex, roughness: 1 });
-    const wall = 6, rise = 3;
-    const gW = (L + 300) * S, gH = (W + 300) * S;
-    // длинные стороны
-    [-1, 1].forEach((sz) => {
-      const m = new T.Mesh(new T.PlaneGeometry(gW + wall, wall), standMat.clone());
-      m.material.map = tex;
-      m.position.set(0, rise / 2, sz * (gH / 2 + wall / 2 - 0.5));
-      m.rotation.x = sz * (-Math.PI / 2 + sz * 0.5);
-      grp.add(m);
-    });
-    [-1, 1].forEach((sx) => {
-      const m = new T.Mesh(new T.PlaneGeometry(gH + wall, wall), standMat.clone());
-      m.material.map = tex;
-      m.position.set(sx * (gW / 2 + wall / 2 - 0.5), rise / 2, 0);
-      m.rotation.z = Math.PI / 2;
-      m.rotation.x = -Math.PI / 2 + 0.5;
-      m.rotation.y = 0;
-      // ориентируем вертикально с наклоном
-      m.rotation.set(0, 0, 0);
-      m.rotation.y = -sx * Math.PI / 2;
-      m.rotation.x = -Math.PI / 2 + 0.5;
-      grp.add(m);
-    });
+    const standMat = new T.MeshStandardMaterial({ map: crowdTexture(), roughness: 1, side: T.DoubleSide });
+    const H = 9, TILT = 0.42, GAP = 1.2;
+    const ex = groundHalfX + GAP, ez = groundHalfZ + GAP;
+
+    function wall(width, x, z, yaw) {
+      const m = new T.Mesh(new T.PlaneGeometry(width, H), standMat);
+      m.rotation.order = "YXZ";       // сперва наклон, затем разворот
+      m.rotation.y = yaw;
+      m.rotation.x = TILT;
+      m.position.set(x, H * 0.5 * Math.cos(TILT), z);
+      return m;
+    }
+    grp.add(wall(ex * 2 + 4, 0, -ez, 0));            // ближняя (за нижней бровкой)
+    grp.add(wall(ex * 2 + 4, 0, ez, Math.PI));       // дальняя
+    grp.add(wall(ez * 2 + 4, -ex, 0, Math.PI / 2));  // левая (за воротами)
+    grp.add(wall(ez * 2 + 4, ex, 0, -Math.PI / 2));  // правая
     return grp;
   }
 
@@ -353,6 +355,8 @@ window.Scene3D = (function () {
     L = cfg.PITCH_L; W = cfg.PITCH_W; GOAL_HALF = cfg.GOAL_HALF;
     MOUTH_LO = cfg.MOUTH_LO; MOUTH_HI = cfg.MOUTH_HI;
     halfL = (L / 2) * S; halfW = (W / 2) * S;
+    groundHalfX = (L / 2 + RUNOFF) * S;
+    groundHalfZ = (W / 2 + RUNOFF) * S;
 
     renderer = new T.WebGLRenderer({ canvas: canvasEl, antialias: true, powerPreference: "high-performance" });
     // Ограничиваем pixel ratio: на телефонах с DPR 3 это в разы меньше пикселей => выше FPS.
@@ -371,11 +375,11 @@ window.Scene3D = (function () {
     sun.position.set(6, 14, 4);
     scene.add(sun);
 
-    // Газон-раннофф (тёмная база) + поле
-    const base = new T.Mesh(new T.PlaneGeometry((L + 320) * S, (W + 320) * S), mat(0x1f6b39, 1));
-    base.rotation.x = -Math.PI / 2; base.position.y = -0.01; scene.add(base);
+    // Тёмная база под всем + газон с разметкой (шире поля на RUNOFF с каждой стороны)
+    const base = new T.Mesh(new T.PlaneGeometry(groundHalfX * 2 + 8, groundHalfZ * 2 + 8), mat(0x1f6b39, 1));
+    base.rotation.x = -Math.PI / 2; base.position.y = -0.02; scene.add(base);
 
-    const pitch = new T.Mesh(new T.PlaneGeometry((L + 300) * S, (W + 300) * S),
+    const pitch = new T.Mesh(new T.PlaneGeometry(groundHalfX * 2, groundHalfZ * 2),
       new T.MeshStandardMaterial({ map: pitchTexture(), roughness: 0.95 }));
     pitch.rotation.x = -Math.PI / 2;
     scene.add(pitch);
@@ -481,17 +485,19 @@ window.Scene3D = (function () {
     // Салюты во время заставки
     updateFireworks(dt, gs.state === "intro" && gs.introActive);
 
-    // Камера: широкоугольный «трансляционный» ракурс ~35° к горизонту,
-    // следит за мячом по длине (X) и мягко по ширине (Z).
+    // Камера: «трансляционный» ракурс — ANGLE градусов к горизонту (меньше =>
+    // ниже и более сбоку). Следит за мячом по длине (X) и по ширине (Z).
+    const ANGLE = 50 * Math.PI / 180;
+    const CAM_DEPTH = 7.5;   // отступ камеры назад от фокуса (больше => шире обзор)
+    const CAM_AHEAD = 2.0;   // насколько смотреть вперёд от фокуса
+    const CAM_LOOK_Y = 2.0;
+    const CAM_H = CAM_LOOK_Y + Math.tan(ANGLE) * (CAM_DEPTH + CAM_AHEAD);
+
     const fx = (gs.camX - L / 2) * S;
     const fz = ((gs.camZ != null ? gs.camZ : W / 2) - W / 2) * S;
-    const CAM_DEPTH = 8.5;   // отступ камеры назад от фокуса (три ед.)
-    const CAM_AHEAD = 2.0;   // насколько смотреть вперёд от фокуса
-    const CAM_LOOK_Y = 2.2;
-    const ANGLE = 35 * Math.PI / 180;
-    const horiz = CAM_DEPTH + CAM_AHEAD;
-    const CAM_H = CAM_LOOK_Y + Math.tan(ANGLE) * horiz;
-    camera.position.set(fx, CAM_H, fz - CAM_DEPTH);
+    // Не заезжаем за газон/трибуны, когда камера опускается к ближней бровке.
+    const cz = Math.max(fz - CAM_DEPTH, -(groundHalfZ - 1));
+    camera.position.set(fx, CAM_H, cz);
     camera.lookAt(fx, CAM_LOOK_Y, fz + CAM_AHEAD);
 
     renderer.render(scene, camera);

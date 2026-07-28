@@ -498,7 +498,7 @@ function placeRestart(player, x, z) {
   ball.vx = 0; ball.vz = 0; ball.vh = 0;
   ball.owner = player; ball.lastTeam = player.team; ball.cooldown = 0.35;
   camX = camClamp(player.x);
-  camZ = clamp(player.z, PITCH_W * 0.34, PITCH_W * 0.66);
+  camZ = clamp(player.z, PITCH_W * 0.05, PITCH_W * 0.95);
 }
 
 function throwInOut() {
@@ -783,7 +783,8 @@ function step(dt) {
   // Камера едет за мячом по длине поля (плавно) и мягко следит по ширине.
   const target = camClamp(ball.x);
   camX += (target - camX) * Math.min(1, 2.6 * dt);
-  const tz = clamp(ball.z, PITCH_W * 0.34, PITCH_W * 0.66);
+  // Камера доезжает почти до бровок — тогда за линией виден кусок газона.
+  const tz = clamp(ball.z, PITCH_W * 0.05, PITCH_W * 0.95);
   camZ += (tz - camZ) * Math.min(1, 2.0 * dt);
 
   const m = Math.floor(timeLeft / 60), s = Math.floor(timeLeft % 60);
