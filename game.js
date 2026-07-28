@@ -151,6 +151,7 @@ const el = {
   netStart: document.getElementById("netStart"),
   netCancel: document.getElementById("netCancel"),
   netCopy: document.getElementById("netCopy"),
+  netLog: document.getElementById("netLog"),
 };
 
 /* =========================================================================
@@ -1208,6 +1209,20 @@ function setMode(mode, team) {
 
 function netSay(text) { if (el.netStatus) el.netStatus.textContent = text; }
 
+// Человеческие пояснения к кодам ошибок PeerJS.
+function netErrorText(code) {
+  if (/network|socket|server-error/i.test(code))
+    return "Не удалось связаться с сервером PeerJS. Возможно, его блокирует ваша сеть — попробуйте мобильный интернет вместо Wi-Fi.";
+  if (/peer-unavailable/i.test(code))
+    return "Хост не найден. Проверьте код или пусть соперник подключится первым.";
+  if (/browser-incompatible/i.test(code))
+    return "Браузер не поддерживает WebRTC.";
+  if (/ssl/i.test(code))
+    return "Нужен HTTPS. Откройте игру по https-ссылке.";
+  if (/не отвеча|брокер/i.test(code)) return code;
+  return "Не удалось подключиться: " + code;
+}
+
 function openNetPanel() {
   if (!el.netPanel) return;
   const url = new URL(location.href);
@@ -1228,6 +1243,12 @@ function connectNet() {
   netSay("Соединение…");
 
   Net.on("status", netSay);
+  Net.on("log", (text) => {
+    if (!el.netLog) return;
+    el.netLog.hidden = false;
+    el.netLog.textContent = text;
+    el.netLog.scrollTop = el.netLog.scrollHeight;
+  });
   Net.on("message", onNetMessage);
   Net.on("open", () => {
     if (Net.role === "host") {
@@ -1246,7 +1267,7 @@ function connectNet() {
     if (role === "host") netSay("Вы хост. Ожидание соперника…");
     else netSay("Вы гость. Подключение к хосту…");
   }).catch((err) => {
-    netSay("Не удалось подключиться: " + ((err && err.message) || err));
+    netSay(netErrorText((err && err.message) || String(err)));
     el.netGo.hidden = false;
   });
 }

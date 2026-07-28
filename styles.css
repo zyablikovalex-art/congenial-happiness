@@ -481,6 +481,24 @@ button#startBtn:active { transform: scale(0.96); }
   opacity: 0.9;
 }
 
+#netLog {
+  text-align: left;
+  font-size: 10.5px;
+  line-height: 1.35;
+  max-height: 110px;
+  overflow-y: auto;
+  margin: 6px 0 0;
+  padding: 8px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.75);
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+#netLog[hidden] { display: none; }
+
 /* ---------- Подсказка «поверни устройство» ---------- */
 #rotate {
   position: fixed;
