@@ -34,8 +34,9 @@ const DRIBBLE_AHEAD = 24; // насколько мяч выносится впе
 const PASS_MIN = 220, PASS_MAX = 500;
 const SHOT_MIN = 360, SHOT_MAX = 620;
 // Навес (пас с подъёмом): горизонтальная скорость и вертикальный подброс растут с зарядом.
-const LOB_MIN_SPEED = 175, LOB_MAX_SPEED = 360;
-const LOB_MIN_LOFT = 260, LOB_MAX_LOFT = 540;
+// Рассчитано под большое поле: дальность ≈ speed · (2·loft/GRAV) − потери на трении.
+const LOB_MIN_SPEED = 300, LOB_MAX_SPEED = 680;
+const LOB_MIN_LOFT = 400, LOB_MAX_LOFT = 820;
 const CHARGE_TIME = 0.8;  // сек до полного заряда
 const CHARGE_MIN = 0.32;  // доля силы при мгновенном тапе
 const GRAV = 900;
@@ -445,10 +446,10 @@ function updateFreeBall(dt) {
     ball.h = 0;
     if (ball.vh < 0) ball.vh = -ball.vh * BOUNCE;
     if (Math.abs(ball.vh) < 30) ball.vh = 0;
-    const fr = Math.exp(-1.35 * dt); // трение о газон (мяч катится дальше)
+    const fr = Math.exp(-1.05 * dt); // трение о газон (мяч катится дальше на большом поле)
     ball.vx *= fr; ball.vz *= fr;
   } else {
-    const fr = Math.exp(-0.35 * dt);
+    const fr = Math.exp(-0.14 * dt); // почти нет сопротивления в полёте => навес несётся дальше
     ball.vx *= fr; ball.vz *= fr;
   }
   const sp = hyp(ball.vx, ball.vz);
