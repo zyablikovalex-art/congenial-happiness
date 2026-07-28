@@ -401,6 +401,75 @@ button#startBtn {
 }
 button#startBtn:active { transform: scale(0.96); }
 
+/* ---------- Лобби сетевой игры ---------- */
+.menu-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.menu-actions .btn-ghost {
+  appearance: none;
+  background: transparent;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  font-size: 16px;
+  font-weight: 700;
+  padding: 13px 22px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+#netPanel {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(3, 25, 13, 0.8);
+  backdrop-filter: blur(4px);
+  z-index: 16;
+}
+#netPanel[hidden] { display: none; }
+#netPanel .card { max-width: 380px; }
+#netPanel h2 { margin: 0 0 16px; font-size: 20px; }
+
+#netCodeInput {
+  width: 100%;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: 6px;
+  text-align: center;
+  text-transform: uppercase;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: rgba(0, 0, 0, 0.25);
+  color: #ffe14d;
+  font-family: inherit;
+}
+
+.net-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  opacity: 0.85;
+  margin-bottom: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.net-check input { width: 18px; height: 18px; }
+
+.net-status {
+  font-size: 14px;
+  min-height: 20px;
+  margin: 0 0 4px;
+  opacity: 0.9;
+}
+
 /* ---------- Подсказка «поверни устройство» ---------- */
 #rotate {
   position: fixed;

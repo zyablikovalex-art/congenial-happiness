@@ -110,7 +110,16 @@ let timeLeft = MATCH_SECONDS;
 let celebrate = 0;
 let lastGoal = null;
 let restartMsg = "", restartMsgT = 0; // подпись типа возобновления игры
-let active = null;         // активный игрок команды 0
+// Режим: 'ai' — соперник под управлением ИИ (как было); 'host' — мы считаем
+// матч и принимаем ввод соперника; 'guest' — матч считает соперник, мы шлём
+// ввод и рисуем присланное состояние.
+let netMode = "ai";
+let myTeam = 0;            // за какую команду играю я (гость играет за 1)
+let viewFlip = 1;          // -1 у гостя: вид и управление разворачиваются
+const activeOf = [null, null]; // активный игрок каждой команды
+let active = null;         // активный игрок МОЕЙ команды (= activeOf[myTeam])
+// Ввод соперника по сети (используется хостом)
+const remote = { vec: { x: 0, z: 0 }, sprint: false, queue: [] };
 let F = 0;                 // счётчик кадров (для детерминированного «рандома»)
 
 const el = {
@@ -133,6 +142,15 @@ const el = {
   heightVal: document.getElementById("heightVal"),
   settingsClose: document.getElementById("settingsClose"),
   settingsReset: document.getElementById("settingsReset"),
+  netBtn: document.getElementById("netBtn"),
+  netPanel: document.getElementById("netPanel"),
+  netCodeInput: document.getElementById("netCodeInput"),
+  netLocal: document.getElementById("netLocal"),
+  netStatus: document.getElementById("netStatus"),
+  netGo: document.getElementById("netGo"),
+  netStart: document.getElementById("netStart"),
+  netCancel: document.getElementById("netCancel"),
+  netCopy: document.getElementById("netCopy"),
 };
 
 /* =========================================================================
@@ -342,11 +360,12 @@ function inputVector() {
   if (keyHeld.has("arrowright")) dx -= 1;  // вправо на экране = -x в мире
   if (keyHeld.has("arrowup")) dz += 1;     // вверх по экрану = дальняя сторона
   if (keyHeld.has("arrowdown")) dz -= 1;
-  if (dx || dz) { const m = hyp(dx, dz); return { x: dx / m, z: dz / m }; }
+  // viewFlip = -1 у гостя: его камера развёрнута, значит и мир зеркалим.
+  if (dx || dz) { const m = hyp(dx, dz); return { x: viewFlip * dx / m, z: viewFlip * dz / m }; }
   // Джойстик (аналогово: модуль вектора = сила нажатия)
   if (stick.active) {
     const mag = hyp(stick.jx, stick.jy);
-    if (mag > 0.14) return { x: -stick.jx, z: -stick.jy }; // палец-вправо => экранное вправо
+    if (mag > 0.14) return { x: -viewFlip * stick.jx, z: -viewFlip * stick.jy };
   }
   return { x: 0, z: 0 };
 }
@@ -414,8 +433,8 @@ function passDirection(p) {
   // Прицел. У активного игрока — джойстик/клавиши (куда целишься),
   // иначе (в т.ч. ИИ) — куда смотрит игрок, в крайнем случае вперёд к воротам.
   let aimx = 0, aimz = 0;
-  if (p === active) {
-    const iv = inputVector();
+  {
+    const iv = inputVectorFor(p);   // джойстик того, кто управляет этим игроком
     if (hyp(iv.x, iv.z) > 0.2) { aimx = iv.x; aimz = iv.z; }
   }
   if (aimx === 0 && aimz === 0) {
@@ -550,7 +569,7 @@ function throwInOut() {
   const team = ball.lastTeam === 0 ? 1 : 0;        // вбрасывает соперник
   const p = nearestFieldOfTeam(team, x, side);
   placeRestart(p, x, side);
-  restartMsg = "Вброс"; restartMsgT = 1.4;
+  restartMsg = "Вброс"; restartMsgT = 1.4; restartCode = 1;
 }
 
 function goalLineOut(goalX) {
@@ -562,13 +581,13 @@ function goalLineOut(goalX) {
     const dir = goalX === 0 ? 1 : -1;
     const gk = players.find((p) => p.team === defendTeam && p.isGK);
     placeRestart(gk, goalX + dir * 120, PITCH_W / 2);
-    restartMsg = "Удар от ворот"; restartMsgT = 1.4;
+    restartMsg = "Удар от ворот"; restartMsgT = 1.4; restartCode = 2;
   } else {
     // Защищающиеся выбили => угловой атакующим.
     const cz = ball.z < PITCH_W / 2 ? 30 : PITCH_W - 30;
     const p = nearestFieldOfTeam(attackTeam, goalX, cz);
     placeRestart(p, goalX + (goalX === 0 ? 20 : -20), cz);
-    restartMsg = "Угловой"; restartMsgT = 1.4;
+    restartMsg = "Угловой"; restartMsgT = 1.4; restartCode = 3;
   }
 }
 
@@ -673,34 +692,53 @@ function aiControl(p, dt) {
   moveTo(p, tx, tz, spd, dt);
 }
 
-let manualHold = 0; // сек, в течение которых уважаем ручной выбор игрока
+const manualHoldOf = [0, 0]; // сек, в течение которых уважаем ручной выбор
 
-function pickActive() {
-  // Владеем мячом — управляем владельцем всегда.
-  if (ball.owner && ball.owner.team === 0) { active = ball.owner; manualHold = 0; return; }
-  const [n] = nearestFieldToBall(0);
-  if (!active || active.isGK || active.team !== 0) { active = n; return; }
-  // Игрок вручную выбрал игрока — не перехватываем управление автоматически.
-  if (manualHold > 0) return;
-  if (n && n !== active && dist(n, ball) + 14 < dist(active, ball)) active = n;
-  if (!active) active = n;
+// Команда управляется человеком? В режиме с ИИ — только наша.
+function isHumanTeam(team) {
+  return netMode === "ai" ? team === myTeam : true;
 }
 
-// Ручная смена управляемого игрока (кнопка «Смена»). Циклично по игрокам
-// команды 0, отсортированным по близости к мячу.
-function cycleActivePlayer() {
-  if (ball.owner && ball.owner.team === 0) return; // владеем — смена не нужна
-  const field = players.filter((p) => p.team === 0 && !p.isGK);
+function pickActiveFor(team) {
+  const cur = activeOf[team];
+  // Владеем мячом — управляем владельцем всегда.
+  if (ball.owner && ball.owner.team === team) {
+    activeOf[team] = ball.owner; manualHoldOf[team] = 0; return;
+  }
+  const [n] = nearestFieldToBall(team);
+  if (!cur || cur.isGK || cur.team !== team) { activeOf[team] = n; return; }
+  // Игрок вручную выбрал игрока — не перехватываем управление автоматически.
+  if (manualHoldOf[team] > 0) return;
+  if (n && n !== cur && dist(n, ball) + 14 < dist(cur, ball)) activeOf[team] = n;
+  if (!activeOf[team]) activeOf[team] = n;
+}
+
+// Ручная смена управляемого игрока (кнопка «Смена»).
+function cycleActiveFor(team) {
+  if (ball.owner && ball.owner.team === team) return; // владеем — смена не нужна
+  const field = players.filter((p) => p.team === team && !p.isGK);
   field.sort((a, b) => dist(a, ball) - dist(b, ball));
   if (!field.length) return;
-  const idx = field.indexOf(active);
-  active = field[(idx + 1) % field.length];
-  manualHold = 1.6;
+  const idx = field.indexOf(activeOf[team]);
+  activeOf[team] = field[(idx + 1) % field.length];
+  manualHoldOf[team] = 1.6;
+}
+
+// Ввод, управляющий этим игроком: мой джойстик или присланный соперником.
+function inputVectorFor(p) {
+  if (p && p === activeOf[myTeam]) return inputVector();
+  if (netMode === "host" && p && p === activeOf[1 - myTeam]) return remote.vec;
+  return { x: 0, z: 0 };
+}
+function sprintFor(p) {
+  if (p && p === activeOf[myTeam]) return sprintHeld();
+  if (netMode === "host" && p && p === activeOf[1 - myTeam]) return remote.sprint;
+  return false;
 }
 
 function userMove(p, dt) {
-  const v = inputVector();
-  const speed = sprintHeld() ? SPRINT : SPEED;
+  const v = inputVectorFor(p);
+  const speed = sprintFor(p) ? SPRINT : SPEED;
   moveActor(p, v.x, v.z, speed, dt);
 }
 
@@ -745,8 +783,7 @@ function kickoffReset(kickTeam) {
 
 function scoreGoal(who) {
   if (who === "you") scoreYou++; else scoreCpu++;
-  el.scoreYou.textContent = scoreYou;
-  el.scoreCpu.textContent = scoreCpu;
+  updateScoreHud();
   celebrate = 1.3;
   lastGoal = who;
   kickoffReset(who === "you" ? 1 : 0); // пропустившая команда вводит мяч
@@ -764,6 +801,8 @@ function frame(ts) {
 
   if (paused) {
     dt = 0; // сцена рисуется, но матч стоит, пока открыты настройки
+  } else if (netMode === "guest") {
+    guestFrame(dt); // гость физику не считает — только шлёт ввод и рисует
   } else if (state === "playing") {
     F++;
     timeLeft -= dt;
@@ -780,8 +819,19 @@ function frame(ts) {
   requestAnimationFrame(frame);
 }
 
+// Применить действие (пас/удар/навес/отбор/смена) к активному игроку команды.
+function applyAction(a, team) {
+  const p = activeOf[team];
+  if (a === "switch" || a.type === "switch") { cycleActiveFor(team); return; }
+  if (a.type === "tackle") doTackle(p);
+  else if (a.type === "pass") doPass(p, a.power);
+  else if (a.type === "lob") doLob(p, a.power);
+  else if (a.type === "shoot") doShoot(p, a.power);
+}
+
 function step(dt) {
-  if (manualHold > 0) manualHold -= dt;
+  if (manualHoldOf[0] > 0) manualHoldOf[0] -= dt;
+  if (manualHoldOf[1] > 0) manualHoldOf[1] -= dt;
   if (restartMsgT > 0) restartMsgT -= dt;
 
   // Кого прессинговать
@@ -789,7 +839,9 @@ function step(dt) {
   chaser[0] = n0[0]; chaser2[0] = n0[1];
   chaser[1] = n1[0]; chaser2[1] = n1[1];
 
-  pickActive();
+  pickActiveFor(myTeam);
+  if (netMode !== "ai") pickActiveFor(1 - myTeam);
+  active = activeOf[myTeam];
 
   // Накопление заряда усилия, пока держим ПАС/УДАР.
   if (charge.action) {
@@ -801,19 +853,17 @@ function step(dt) {
     }
   }
 
-  // Действия игрока
-  while (actionQueue.length) {
-    const a = actionQueue.shift();
-    if (a === "switch") cycleActivePlayer();
-    else if (a.type === "tackle") doTackle(active);
-    else if (a.type === "pass") doPass(active, a.power);
-    else if (a.type === "lob") doLob(active, a.power);
-    else if (a.type === "shoot") doShoot(active, a.power);
+  // Мои действия
+  while (actionQueue.length) applyAction(actionQueue.shift(), myTeam);
+  // Действия соперника, пришедшие по сети (только у хоста)
+  if (netMode === "host") {
+    while (remote.queue.length) applyAction(remote.queue.shift(), 1 - myTeam);
   }
 
   // Ход всех игроков
   for (const p of players) {
-    if (p === active) userMove(p, dt);
+    if (p === activeOf[0] && isHumanTeam(0)) userMove(p, dt);
+    else if (p === activeOf[1] && isHumanTeam(1)) userMove(p, dt);
     else if (ball.owner === p) aiWithBall(p, dt);
     else aiControl(p, dt);
   }
@@ -825,15 +875,154 @@ function step(dt) {
 
   separatePlayers();
 
-  // Камера едет за мячом по длине поля (плавно) и мягко следит по ширине.
+  followCamera(dt);
+  updateClock();
+  if (netMode === "host") maybeSendSnapshot(dt);
+}
+
+// Камера едет за мячом по длине поля (плавно) и мягко следит по ширине.
+// Вызывается и хостом, и гостем — гость ведёт её по присланному мячу.
+function followCamera(dt) {
   const target = camClamp(ball.x);
   camX += (target - camX) * Math.min(1, 2.6 * dt);
   // Камера доезжает почти до бровок — тогда за линией виден кусок газона.
   const tz = clamp(ball.z, PITCH_W * 0.05, PITCH_W * 0.95);
   camZ += (tz - camZ) * Math.min(1, 2.0 * dt);
+}
 
+function updateClock() {
   const m = Math.floor(timeLeft / 60), s = Math.floor(timeLeft % 60);
   el.clock.textContent = `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+/* =========================================================================
+   Сеть: хост шлёт снимки состояния, гость шлёт ввод и рисует присланное
+   ========================================================================= */
+const SNAP_HZ = 20, INPUT_HZ = 30;
+let snapAcc = 0, inputAcc = 0;
+const RESTART_TEXT = ["", "Вброс", "Удар от ворот", "Угловой"];
+let restartCode = 0;
+const STATES = ["menu", "intro", "playing", "over"];
+
+function r1(v) { return Math.round(v * 10) / 10; }
+
+function maybeSendSnapshot(dt) {
+  snapAcc += dt;
+  if (snapAcc < 1 / SNAP_HZ) return;
+  snapAcc = 0;
+  const a = [
+    STATES.indexOf(state), scoreYou, scoreCpu, r1(timeLeft),
+    r1(ball.x), r1(ball.z), r1(ball.h),
+    ball.owner ? ball.owner.id : -1,
+    activeOf[0] ? activeOf[0].id : -1,
+    activeOf[1] ? activeOf[1].id : -1,
+    r1(celebrate), lastGoal === "you" ? 0 : 1,
+    restartMsgT > 0 ? restartCode : 0,
+    r1(introT),
+  ];
+  for (const p of players) { a.push(r1(p.x), r1(p.z)); }
+  Net.send({ t: "s", a });
+}
+
+function applySnapshot(a) {
+  const st = STATES[a[0]] || "playing";
+  if (st !== state) setStateFromNet(st);
+  scoreYou = a[1]; scoreCpu = a[2]; timeLeft = a[3];
+  ball.tx = a[4]; ball.tz = a[5]; ball.h = a[6];
+  ball.owner = a[7] >= 0 ? players[a[7]] : null;
+  activeOf[0] = a[8] >= 0 ? players[a[8]] : null;
+  activeOf[1] = a[9] >= 0 ? players[a[9]] : null;
+  active = activeOf[myTeam];
+  celebrate = a[10];
+  lastGoal = a[11] === 0 ? "you" : "cpu";
+  const rc = a[12];
+  if (rc > 0) { restartMsg = RESTART_TEXT[rc]; restartMsgT = 1.0; }
+  introT = a[13];
+  let k = 14;
+  for (const p of players) { p.tx = a[k++]; p.tz = a[k++]; }
+  updateScoreHud();
+}
+
+// Гость не считает физику: он подтягивает позиции к присланным и по разнице
+// вычисляет скорость, чтобы работала анимация бега.
+function smoothToTargets(dt) {
+  const k = Math.min(1, 14 * dt);
+  for (const p of players) {
+    if (p.tx == null) continue;
+    const ox = p.x, oz = p.z;
+    p.x += (p.tx - p.x) * k;
+    p.z += (p.tz - p.z) * k;
+    p.vx = dt > 0 ? (p.x - ox) / dt : 0;
+    p.vz = dt > 0 ? (p.z - oz) / dt : 0;
+    const sp = hyp(p.vx, p.vz);
+    if (sp > 10) { p.dirx = p.vx / sp; p.dirz = p.vz / sp; p.runPhase += sp * dt * 0.06; }
+  }
+  if (ball.tx != null) {
+    ball.x += (ball.tx - ball.x) * k;
+    ball.z += (ball.tz - ball.z) * k;
+  }
+}
+
+function maybeSendInput(dt) {
+  inputAcc += dt;
+  if (inputAcc < 1 / INPUT_HZ) return;
+  inputAcc = 0;
+  const v = inputVector();
+  Net.send({ t: "i", v: [Math.round(v.x * 100) / 100, Math.round(v.z * 100) / 100], s: sprintHeld() ? 1 : 0 });
+}
+
+function guestFrame(dt) {
+  maybeSendInput(dt);
+  while (actionQueue.length) {
+    const a = actionQueue.shift();
+    Net.send({ t: "a", a: a === "switch" ? { type: "switch" } : a });
+  }
+  // Заряд усилия ведём локально — шкала должна отзываться сразу.
+  if (charge.action) {
+    if (!active || ball.owner !== active) resetCharge();
+    else {
+      charge.t = Math.min(CHARGE_TIME, charge.t + dt);
+      showPowerBar(charge.action, charge.t / CHARGE_TIME);
+    }
+  }
+  smoothToTargets(dt);
+  followCamera(dt);
+  if (celebrate > 0) celebrate -= dt;
+  if (restartMsgT > 0) restartMsgT -= dt;
+  updateClock();
+}
+
+function onNetMessage(m) {
+  if (!m) return;
+  if (m.t === "s" && netMode === "guest") applySnapshot(m.a);
+  else if (m.t === "i" && netMode === "host") {
+    remote.vec = { x: m.v[0], z: m.v[1] }; remote.sprint = !!m.s;
+  } else if (m.t === "a" && netMode === "host") {
+    remote.queue.push(m.a);
+  } else if (m.t === "start" && netMode === "guest") {
+    // Прячем лобби; само состояние матча приедет со снимками.
+    el.overlay.classList.remove("show");
+    if (el.netPanel) el.netPanel.hidden = true;
+  }
+}
+
+function setStateFromNet(st) {
+  state = st;
+  if (st === "playing" || st === "intro") {
+    el.overlay.classList.remove("show");
+    if (el.netPanel) el.netPanel.hidden = true;
+    document.body.classList.toggle("playing", st === "playing");
+  } else if (st === "over") {
+    document.body.classList.remove("playing");
+    showResult();
+  }
+}
+
+function updateScoreHud() {
+  const mine = myTeam === 0 ? scoreYou : scoreCpu;
+  const theirs = myTeam === 0 ? scoreCpu : scoreYou;
+  el.scoreYou.textContent = mine;
+  el.scoreCpu.textContent = theirs;
 }
 
 /* =========================================================================
@@ -841,7 +1030,7 @@ function step(dt) {
    ========================================================================= */
 function draw(dt) {
   Scene3D.render({
-    players, ball, camX, camZ, active, state,
+    players, ball, camX, camZ, active, state, flip: viewFlip < 0,
     introActive: state === "intro" && introT < INTRO_END - 0.1,
   }, dt || 0);
   updateOverlays();
@@ -962,17 +1151,19 @@ canvas.addEventListener("pointerdown", () => {
    ========================================================================= */
 function startMatch() {
   scoreYou = 0; scoreCpu = 0; timeLeft = MATCH_SECONDS; celebrate = 0; F = 0;
-  el.scoreYou.textContent = "0";
-  el.scoreCpu.textContent = "0";
+  updateScoreHud();
   const mm = Math.floor(MATCH_SECONDS / 60), ss = MATCH_SECONDS % 60;
   el.clock.textContent = `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
   kickoffReset(0);
-  active = null;
+  active = null; activeOf[0] = activeOf[1] = null;
+  remote.queue.length = 0; remote.vec = { x: 0, z: 0 }; remote.sprint = false;
   ensureAudio();
   introT = 0; introWhistled = false;
   state = "intro";
   el.overlay.classList.remove("show");
+  if (el.netPanel) el.netPanel.hidden = true;
   document.body.classList.remove("playing"); // геймпад скрыт во время заставки
+  if (netMode === "host") Net.send({ t: "start" });
 }
 
 function endMatch() {
@@ -980,17 +1171,120 @@ function endMatch() {
   document.body.classList.remove("playing");
   resetCharge();
   pad.sprint = false;
+  showResult();
+}
+
+function showResult() {
+  const mine = myTeam === 0 ? scoreYou : scoreCpu;
+  const theirs = myTeam === 0 ? scoreCpu : scoreYou;
   let title;
-  if (scoreYou > scoreCpu) title = "Победа! 🏆";
-  else if (scoreYou < scoreCpu) title = "Поражение 😔";
+  if (mine > theirs) title = "Победа! 🏆";
+  else if (mine < theirs) title = "Поражение 😔";
   else title = "Ничья 🤝";
   el.overlayText.innerHTML =
-    `<b style="font-size:20px">${title}</b><br />Счёт ${scoreYou} : ${scoreCpu}<br /><br />Ещё разок?`;
-  el.startBtn.textContent = "Играть снова";
+    `<b style="font-size:20px">${title}</b><br />Счёт ${mine} : ${theirs}<br /><br />Ещё разок?`;
+  el.startBtn.textContent = netMode === "guest" ? "В меню" : "Играть снова";
   el.overlay.classList.add("show");
 }
 
-el.startBtn.addEventListener("click", startMatch);
+el.startBtn.addEventListener("click", () => {
+  // Гость не запускает матч сам — только хост. Гостю кнопка возвращает в меню.
+  if (netMode === "guest") { leaveNet(); return; }
+  startMatch();
+});
+
+/* =========================================================================
+   Лобби сетевой игры
+   ========================================================================= */
+function setMode(mode, team) {
+  netMode = mode;
+  myTeam = team;
+  viewFlip = team === 1 ? -1 : 1;   // гость смотрит с другой стороны
+  active = activeOf[myTeam];
+  updateScoreHud();
+  const label = document.getElementById("teamCpu");
+  if (label) label.textContent = mode === "ai" ? "ИИ" : "СОПЕРНИК";
+}
+
+function netSay(text) { if (el.netStatus) el.netStatus.textContent = text; }
+
+function openNetPanel() {
+  if (!el.netPanel) return;
+  const url = new URL(location.href);
+  const fromUrl = (url.searchParams.get("room") || "").toUpperCase();
+  el.netCodeInput.value = fromUrl || Net.makeCode();
+  el.netPanel.hidden = false;
+  el.netGo.hidden = false;
+  el.netStart.hidden = true;
+  el.netCopy.hidden = true;
+  netSay("Оба игрока вводят один код и жмут «Подключиться»");
+}
+
+function connectNet() {
+  const code = (el.netCodeInput.value || "").trim().toUpperCase();
+  if (code.length < 3) { netSay("Код слишком короткий"); return; }
+  const transport = el.netLocal && el.netLocal.checked ? "local" : "peerjs";
+  el.netGo.hidden = true;
+  netSay("Соединение…");
+
+  Net.on("status", netSay);
+  Net.on("message", onNetMessage);
+  Net.on("open", () => {
+    if (Net.role === "host") {
+      netSay("Соперник подключился — можно начинать");
+      el.netStart.hidden = false;
+    } else {
+      netSay("Подключено. Ждём, когда хост начнёт матч");
+    }
+  });
+  Net.on("close", onNetClose);
+
+  Net.connect(code, transport).then((role) => {
+    setMode(role, role === "host" ? 0 : 1);
+    el.netCopy.hidden = false;
+    el.netCopy.dataset.link = location.origin + location.pathname + "?room=" + code;
+    if (role === "host") netSay("Вы хост. Ожидание соперника…");
+    else netSay("Вы гость. Подключение к хосту…");
+  }).catch((err) => {
+    netSay("Не удалось подключиться: " + ((err && err.message) || err));
+    el.netGo.hidden = false;
+  });
+}
+
+function onNetClose() {
+  if (netMode === "host") {
+    // Соперник отключился — матч продолжается против ИИ.
+    setMode("ai", 0);
+    restartMsg = "Соперник отключился"; restartMsgT = 3;
+  } else if (netMode === "guest") {
+    leaveNet();
+  }
+}
+
+function leaveNet() {
+  Net.close();
+  setMode("ai", 0);
+  state = "menu";
+  document.body.classList.remove("playing");
+  if (el.netPanel) el.netPanel.hidden = true;
+  el.startBtn.textContent = "Играть с ИИ";
+  el.overlay.classList.add("show");
+}
+
+if (el.netBtn) el.netBtn.addEventListener("click", openNetPanel);
+if (el.netGo) el.netGo.addEventListener("click", connectNet);
+if (el.netStart) el.netStart.addEventListener("click", () => { el.netPanel.hidden = true; startMatch(); });
+if (el.netCancel) el.netCancel.addEventListener("click", leaveNet);
+if (el.netCopy) el.netCopy.addEventListener("click", () => {
+  const link = el.netCopy.dataset.link || "";
+  if (navigator.clipboard) navigator.clipboard.writeText(link).then(() => netSay("Ссылка скопирована"), () => netSay(link));
+  else netSay(link);
+});
+
+// Пришли по ссылке с кодом — сразу открываем лобби.
+if (new URL(location.href).searchParams.get("room")) {
+  setTimeout(openNetPanel, 100);
+}
 
 if (!window.matchMedia("(display-mode: standalone)").matches) {
   el.installHint.hidden = false;

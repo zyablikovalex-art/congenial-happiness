@@ -15,7 +15,7 @@
     <div class="score">
       <span class="team you">ВЫ</span>
       <span class="nums"><b id="scoreYou">0</b> : <b id="scoreCpu">0</b></span>
-      <span class="team cpu">ИИ</span>
+      <span class="team cpu" id="teamCpu">ИИ</span>
     </div>
     <div class="hud-right">
       <div id="clock">02:00</div>
@@ -62,8 +62,34 @@
         <b>ПК:</b> стрелки — движение, <b>S</b> — пас/отбор, <b>D</b> — удар,
         <b>A</b> — навес (держи для силы), <b>Пробел</b> — смена игрока, <b>Shift</b> — спринт.
       </p>
-      <button id="startBtn">Играть</button>
+      <div class="menu-actions">
+        <button id="startBtn">Играть с ИИ</button>
+        <button id="netBtn" class="btn-ghost">Игра по сети</button>
+      </div>
       <p class="hint" id="installHint" hidden>Совет: «Добавить на экран Домой», чтобы играть как приложение.</p>
+    </div>
+  </div>
+
+  <!-- Лобби сетевой игры -->
+  <div id="netPanel" hidden>
+    <div class="card">
+      <h2>Игра по сети</h2>
+      <label class="setting">
+        <span class="setting-row">Код комнаты</span>
+        <input type="text" id="netCodeInput" maxlength="6" autocomplete="off" spellcheck="false" />
+        <span class="setting-hint">Оба игрока вводят один код — или откройте ссылку ниже</span>
+      </label>
+      <label class="net-check">
+        <input type="checkbox" id="netLocal" />
+        <span>Две вкладки на этом устройстве</span>
+      </label>
+      <p id="netStatus" class="net-status">Введите код и нажмите «Подключиться»</p>
+      <div class="settings-actions">
+        <button id="netCancel" class="btn-ghost">Назад</button>
+        <button id="netCopy" class="btn-ghost" hidden>Ссылка</button>
+        <button id="netGo">Подключиться</button>
+        <button id="netStart" hidden>Начать матч</button>
+      </div>
     </div>
   </div>
 
@@ -98,5 +124,7 @@
 </div>
 
 <script src="./vendor/three.min.js"></script>
+<script src="./vendor/peerjs.min.js"></script>
 <script src="./scene.js"></script>
+<script src="./net.js"></script>
 <script src="./game.js"></script>

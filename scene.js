@@ -510,8 +510,11 @@ window.Scene3D = (function () {
     const lookZ = fz + CAM_AHEAD;
     // Не заезжаем за газон/трибуны, когда камера опускается к ближней бровке.
     const cz = Math.max(lookZ - horiz, -(groundHalfZ - 1));
-    camera.position.set(fx, camY, cz);
-    camera.lookAt(fx, CAM_LOOK_Y, lookZ);
+    // flip — вид с противоположной стороны (для второго игрока по сети),
+    // чтобы он тоже атаковал «вправо».
+    const f = gs.flip ? -1 : 1;
+    camera.position.set(f * fx, camY, f * cz);
+    camera.lookAt(f * fx, CAM_LOOK_Y, f * lookZ);
 
     renderer.render(scene, camera);
   }
