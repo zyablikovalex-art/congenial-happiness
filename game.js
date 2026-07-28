@@ -1,12 +1,10 @@
 "use strict";
 
 /* =========================================================================
-   Футбол 11 на 11 — псевдо-3D вид сбоку (broadcast), альбомная ориентация.
-   Управление: экранный джойстик + Пас/Удар/Спринт или клавиатура.
-   «Пас» работает и как отбор, если мяч не у нашей команды.
-   Всё игровое состояние живёт в мировых координатах (x вдоль поля от ворот
-   к воротам, z — глубина от ближней бровки к дальней). Проекция в экранные
-   пиксели делается отдельно в project().
+   Футбол 11 на 11 — 3D (Three.js), альбомная ориентация.
+   Этот файл — только СИМУЛЯЦИЯ (мир, физика, ИИ, ввод) в мировых координатах
+   (x вдоль поля от ворот к воротам, z — ширина от ближней бровки к дальней,
+   h — высота мяча). Весь рендер — в scene.js (window.Scene3D).
    ========================================================================= */
 
 // ---- Мир ----
@@ -43,52 +41,15 @@ const GRAV = 900;
 const BOUNCE = 0.55;
 
 const canvas = document.getElementById("pitch");
-const ctx = canvas.getContext("2d");
+let camX = PITCH_L / 2; // центр камеры по длине поля (едет за мячом)
 
-// Параметры проекции (заполняются в resize())
-const P = {
-  cssW: 480, cssH: 800, dpr: 1,
-  CX: 240, FAR_Y: 130, NEAR_Y: 560,
-  ppuNear: 1, ppuFar: 0.68,     // пикселей на мировую единицу длины (ближняя/дальняя бровка)
-  NEAR_SCALE: 1, FAR_SCALE: 0.56,
-};
-let camX = PITCH_L / 2;          // центр камеры по длине поля (едет за мячом)
-
-function resize() {
-  const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
-  const cssW = canvas.clientWidth || 480;
-  const cssH = canvas.clientHeight || 800;
-  canvas.width = Math.round(cssW * dpr);
-  canvas.height = Math.round(cssH * dpr);
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-  P.cssW = cssW; P.cssH = cssH; P.dpr = dpr;
-  P.CX = cssW / 2;
-  P.FAR_Y = cssH * 0.11;   // дальняя бровка выше, ближняя ниже => больше глубины
-  P.NEAR_Y = cssH * 0.92;
-  // Масштаб длины: у ближней бровки на весь экран влезает VIS_NEAR единиц.
-  P.ppuNear = cssW / VIS_NEAR;
-  P.ppuFar = P.ppuNear * 0.74;  // меньше сужение дальней бровки => поле шире, заполняет углы
-  P.NEAR_SCALE = clamp(cssH / 430, 0.9, 2.0);
-  P.FAR_SCALE = P.NEAR_SCALE * 0.62;
-}
+function resize() { if (window.Scene3D) Scene3D.resize(); }
 window.addEventListener("resize", resize);
 
 // Допустимый диапазон камеры: у ближней бровки не выходим за пределы поля.
 function camClamp(x) {
   const half = VIS_NEAR / 2;
   return clamp(x, half, PITCH_L - half);
-}
-
-// Мир -> экран. h — высота мяча над газоном (мировые единицы).
-function project(x, z, h) {
-  const t = z / PITCH_W;                       // 0 — ближе (низ, крупнее), 1 — дальше
-  const scale = P.NEAR_SCALE + (P.FAR_SCALE - P.NEAR_SCALE) * t;
-  const gy = P.NEAR_Y + (P.FAR_Y - P.NEAR_Y) * t;
-  const ppu = P.ppuNear + (P.ppuFar - P.ppuNear) * t;
-  const sx = P.CX + (x - camX) * ppu;
-  const sy = gy - (h || 0) * 0.7 * scale;
-  return { sx, sy, scale };
 }
 
 // ---- Мелкие утилиты ----
@@ -154,6 +115,9 @@ const el = {
   startBtn: document.getElementById("startBtn"),
   installHint: document.getElementById("installHint"),
   gamepad: document.getElementById("gamepad"),
+  cineBig: document.getElementById("cineBig"),
+  cineSub: document.getElementById("cineSub"),
+  flash: document.getElementById("flash"),
 };
 
 /* =========================================================================
@@ -651,9 +615,11 @@ function frame(ts) {
     else step(dt);
   } else if (state === "intro") {
     stepIntro(dt);
+  } else if (celebrate > 0) {
+    celebrate -= dt;
   }
 
-  draw();
+  draw(dt);
   requestAnimationFrame(frame);
 }
 
@@ -711,243 +677,45 @@ function step(dt) {
 /* =========================================================================
    Отрисовка
    ========================================================================= */
-function draw() {
-  ctx.clearRect(0, 0, P.cssW, P.cssH);
-  drawStands();
-  drawTunnel();
-  drawPitch();
-
-  // Сортировка по глубине: дальние (большой z) рисуем раньше
-  const order = [];
-  for (const p of players) order.push({ z: p.z, p });
-  order.push({ z: ball.z, ball: true });
-  order.sort((a, b) => b.z - a.z);
-  for (const o of order) { if (o.ball) drawBall(); else drawPerson(o.p); }
-
-  if (state === "intro") drawIntro();
-  if (celebrate > 0) drawGoalFlash();
+function draw(dt) {
+  Scene3D.render({
+    players, ball, camX, active, state,
+    introActive: state === "intro" && introT < INTRO_END - 0.1,
+  }, dt || 0);
+  updateOverlays();
 }
 
-function drawStands() {
-  const g = ctx.createLinearGradient(0, 0, 0, P.FAR_Y + 30);
-  g.addColorStop(0, "#10141c");
-  g.addColorStop(1, "#1b2230");
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, P.cssW, P.FAR_Y + 24);
-  // Трибуны: ряды точек-«зрителей»
-  ctx.save();
-  for (let row = 0; row < 4; row++) {
-    const y = P.FAR_Y - 6 - row * 9;
-    if (y < 4) break;
-    for (let x = 8; x < P.cssW - 4; x += 9) {
-      const c = nrand(row * 97.3 + x * 1.7);
-      ctx.fillStyle = c > 0.66 ? "#3a4457" : c > 0.33 ? "#4a5568" : "#5a6478";
-      ctx.fillRect(x, y, 5, 5);
-    }
+// DOM-оверлеи поверх 3D: кинематографичный текст и вспышка гола.
+let _lastBig = "";
+function updateOverlays() {
+  let bigText = "", bigCls = "", subText = "";
+  if (state === "intro") {
+    if (introT < INTRO_WALK) { subText = "ВЫХОД КОМАНД ⚽ · тап — пропустить"; }
+    else if (introT < INTRO_GO_AT) {
+      const stp = INTRO_CD / 3;
+      bigText = String(Math.max(1, 3 - Math.floor((introT - INTRO_WALK) / stp)));
+      bigCls = "cd";
+    } else { bigText = "GO!"; bigCls = "go"; }
+  } else if (celebrate > 0) {
+    bigText = "ГОЛ!"; bigCls = "goal";
   }
-  ctx.restore();
-}
-
-function fieldPoly(x0, x1, z0, z1) {
-  const a = project(x0, z0, 0), b = project(x1, z0, 0);
-  const c = project(x1, z1, 0), d = project(x0, z1, 0);
-  ctx.beginPath();
-  ctx.moveTo(a.sx, a.sy); ctx.lineTo(b.sx, b.sy);
-  ctx.lineTo(c.sx, c.sy); ctx.lineTo(d.sx, d.sy);
-  ctx.closePath();
-}
-
-function lineWorld(x0, z0, x1, z1) {
-  const a = project(x0, z0, 0), b = project(x1, z1, 0);
-  ctx.beginPath(); ctx.moveTo(a.sx, a.sy); ctx.lineTo(b.sx, b.sy); ctx.stroke();
-}
-
-function ellipseWorld(cx, cz, rx, rz) {
-  ctx.beginPath();
-  const N = 28;
-  for (let i = 0; i <= N; i++) {
-    const a = (i / N) * Math.PI * 2;
-    const pt = project(cx + Math.cos(a) * rx, cz + Math.sin(a) * rz, 0);
-    if (i === 0) ctx.moveTo(pt.sx, pt.sy); else ctx.lineTo(pt.sx, pt.sy);
+  if (el.cineBig && bigText !== _lastBig) {
+    _lastBig = bigText;
+    el.cineBig.textContent = bigText;
+    el.cineBig.className = "";
+    void el.cineBig.offsetWidth; // рестарт CSS-анимации
+    if (bigText) el.cineBig.className = "show " + bigCls;
   }
-  ctx.stroke();
-}
-
-function drawPitch() {
-  // Газон с полосами (полосы поперёк поля — вдоль оси x)
-  const stripes = 12;
-  for (let i = 0; i < stripes; i++) {
-    const x0 = (i / stripes) * PITCH_L, x1 = ((i + 1) / stripes) * PITCH_L;
-    fieldPoly(x0, x1, 0, PITCH_W);
-    ctx.fillStyle = i % 2 ? "#0a6c35" : "#0b7a3b";
-    ctx.fill();
+  if (el.cineSub) {
+    el.cineSub.style.opacity = subText ? "1" : "0";
+    if (subText) el.cineSub.textContent = subText;
   }
-
-  ctx.strokeStyle = "rgba(255,255,255,0.85)";
-  ctx.lineWidth = 2;
-
-  // Границы поля
-  fieldPoly(0, PITCH_L, 0, PITCH_W); ctx.stroke();
-  // Средняя линия + центральный круг
-  lineWorld(PITCH_L / 2, 0, PITCH_L / 2, PITCH_W);
-  ellipseWorld(PITCH_L / 2, PITCH_W / 2, 96, 105);
-
-  // Штрафные площади
-  const boxD = 170, boxHalf = 262;
-  fieldPoly(0, boxD, PITCH_W / 2 - boxHalf, PITCH_W / 2 + boxHalf); ctx.stroke();
-  fieldPoly(PITCH_L - boxD, PITCH_L, PITCH_W / 2 - boxHalf, PITCH_W / 2 + boxHalf); ctx.stroke();
-
-  // Ворота
-  drawGoal(0, 1);
-  drawGoal(PITCH_L, -1);
-}
-
-function drawGoal(gx, dir) {
-  // Стойки в точках z = MOUTH_LO и MOUTH_HI, перекладина сверху.
-  const postH = 96; // мировая высота ворот (визуально)
-  const near = project(gx, MOUTH_LO, 0);
-  const far = project(gx, MOUTH_HI, 0);
-  const nearTop = project(gx, MOUTH_LO, postH);
-  const farTop = project(gx, MOUTH_HI, postH);
-
-  // Сетка
-  ctx.strokeStyle = "rgba(255,255,255,0.25)";
-  ctx.lineWidth = 1;
-  const N = 5;
-  for (let i = 1; i < N; i++) {
-    const zz = MOUTH_LO + (MOUTH_HI - MOUTH_LO) * (i / N);
-    const b = project(gx, zz, 0), t = project(gx, zz, postH);
-    const bb = project(gx + dir * 26, zz, 0), tt = project(gx + dir * 26, zz, postH * 0.85);
-    ctx.beginPath(); ctx.moveTo(t.sx, t.sy); ctx.lineTo(tt.sx, tt.sy); ctx.lineTo(bb.sx, bb.sy); ctx.stroke();
+  if (el.flash) {
+    if (celebrate > 0) {
+      el.flash.style.opacity = String(Math.min(0.5, celebrate * 0.45));
+      el.flash.style.background = lastGoal === "you" ? "#ffe14d" : "#ff8f6b";
+    } else el.flash.style.opacity = "0";
   }
-  for (let i = 0; i <= 3; i++) {
-    const hh = postH * (i / 3);
-    const a = project(gx + dir * 26, MOUTH_LO, hh * 0.85), b = project(gx + dir * 26, MOUTH_HI, hh * 0.85);
-    ctx.beginPath(); ctx.moveTo(a.sx, a.sy); ctx.lineTo(b.sx, b.sy); ctx.stroke();
-  }
-
-  // Каркас
-  ctx.strokeStyle = "#ffffff";
-  ctx.lineWidth = 4;
-  ctx.beginPath();
-  ctx.moveTo(near.sx, near.sy); ctx.lineTo(nearTop.sx, nearTop.sy);
-  ctx.lineTo(farTop.sx, farTop.sy); ctx.lineTo(far.sx, far.sy);
-  ctx.stroke();
-}
-
-function teamColors(p) {
-  if (p.isGK) {
-    return p.team === 0
-      ? { shirt: "#2fbf71", shorts: "#186b3f", socks: "#2fbf71" }
-      : { shirt: "#ffcf40", shorts: "#8a6a00", socks: "#ffcf40" };
-  }
-  return p.team === 0
-    ? { shirt: "#2f7bff", shorts: "#ffffff", socks: "#2f7bff" }
-    : { shirt: "#e8443c", shorts: "#20232b", socks: "#e8443c" };
-}
-
-function drawPerson(p) {
-  const { sx, sy, scale } = project(p.x, p.z, 0);
-  const bh = 46 * scale;
-  const spd = hyp(p.vx, p.vz);
-  const moving = spd > 14;
-  const swing = moving ? Math.sin(p.runPhase) : 0;
-  const col = teamColors(p);
-
-  // Тень
-  ctx.fillStyle = "rgba(0,0,0,0.25)";
-  ctx.beginPath(); ctx.ellipse(sx, sy, 13 * scale, 5 * scale, 0, 0, Math.PI * 2); ctx.fill();
-
-  // Подсветка активного игрока
-  if (p === active && state === "playing") {
-    ctx.strokeStyle = "#ffe14d";
-    ctx.lineWidth = 3 * scale;
-    ctx.beginPath(); ctx.ellipse(sx, sy, 16 * scale, 6.5 * scale, 0, 0, Math.PI * 2); ctx.stroke();
-    // стрелка над головой
-    ctx.fillStyle = "#ffe14d";
-    const ay = sy - bh - 10 * scale;
-    ctx.beginPath();
-    ctx.moveTo(sx, ay + 8 * scale);
-    ctx.lineTo(sx - 6 * scale, ay);
-    ctx.lineTo(sx + 6 * scale, ay);
-    ctx.closePath(); ctx.fill();
-  }
-
-  const hipY = sy - bh * 0.42;
-  const shoulderY = sy - bh * 0.80;
-  const headR = bh * 0.11;
-  const legSpread = swing * bh * 0.16;
-  const armSpread = swing * bh * 0.12;
-
-  ctx.lineCap = "round";
-  // Ноги
-  ctx.strokeStyle = "#1a1a1a";
-  ctx.lineWidth = 4.5 * scale;
-  ctx.beginPath(); ctx.moveTo(sx, hipY); ctx.lineTo(sx - bh * 0.09 + legSpread, sy); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(sx, hipY); ctx.lineTo(sx + bh * 0.09 - legSpread, sy); ctx.stroke();
-  // Гетры
-  ctx.strokeStyle = col.socks;
-  ctx.lineWidth = 4.5 * scale;
-  ctx.beginPath(); ctx.moveTo(sx - bh * 0.09 + legSpread, sy - bh * 0.12); ctx.lineTo(sx - bh * 0.09 + legSpread, sy); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(sx + bh * 0.09 - legSpread, sy - bh * 0.12); ctx.lineTo(sx + bh * 0.09 - legSpread, sy); ctx.stroke();
-  // Шорты
-  ctx.fillStyle = col.shorts;
-  ctx.fillRect(sx - bh * 0.15, hipY - bh * 0.04, bh * 0.30, bh * 0.16);
-  // Руки
-  ctx.strokeStyle = "#e8b48c";
-  ctx.lineWidth = 3.6 * scale;
-  ctx.beginPath(); ctx.moveTo(sx - bh * 0.14, shoulderY + bh * 0.05); ctx.lineTo(sx - bh * 0.20 - armSpread, hipY + bh * 0.02); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(sx + bh * 0.14, shoulderY + bh * 0.05); ctx.lineTo(sx + bh * 0.20 + armSpread, hipY + bh * 0.02); ctx.stroke();
-  // Торс (футболка)
-  ctx.fillStyle = col.shirt;
-  roundRect(sx - bh * 0.17, shoulderY, bh * 0.34, hipY - shoulderY + bh * 0.05, bh * 0.08);
-  ctx.fill();
-  // Голова
-  ctx.fillStyle = "#e8b48c";
-  ctx.beginPath(); ctx.arc(sx, shoulderY - headR * 0.6, headR, 0, Math.PI * 2); ctx.fill();
-}
-
-function drawBall() {
-  const { sx, sy, scale } = project(ball.x, ball.z, 0);
-  const lift = ball.h * 0.7 * scale;
-  // Тень (меньше и бледнее при высоком мяче)
-  const shrink = Math.min(0.6, ball.h * 0.003);
-  ctx.fillStyle = `rgba(0,0,0,${0.28 - shrink * 0.3})`;
-  ctx.beginPath();
-  ctx.ellipse(sx, sy, (7 - shrink * 3) * scale, (3.4 - shrink * 1.5) * scale, 0, 0, Math.PI * 2);
-  ctx.fill();
-  // Мяч
-  const r = 6.8 * scale;
-  const by = sy - lift;
-  ctx.fillStyle = "#ffffff";
-  ctx.beginPath(); ctx.arc(sx, by, r, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = "#111";
-  ctx.beginPath(); ctx.arc(sx, by, r * 0.34, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = "rgba(0,0,0,0.25)";
-  ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.arc(sx, by, r, 0, Math.PI * 2); ctx.stroke();
-}
-
-function drawGoalFlash() {
-  ctx.globalAlpha = Math.min(0.5, celebrate * 0.45);
-  ctx.fillStyle = lastGoal === "you" ? "#ffe14d" : "#ff8f6b";
-  ctx.fillRect(0, 0, P.cssW, P.cssH);
-  ctx.globalAlpha = 1;
-  ctx.fillStyle = "#06371c";
-  ctx.font = `bold ${Math.round(P.cssW * 0.13)}px system-ui, sans-serif`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText("ГОЛ!", P.cssW / 2, P.cssH * 0.4);
-}
-
-function roundRect(x, y, w, h, r) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + w, y, x + w, y + h, r);
-  ctx.arcTo(x + w, y + h, x, y + h, r);
-  ctx.arcTo(x, y + h, x, y, r);
-  ctx.arcTo(x, y, x + w, y, r);
-  ctx.closePath();
 }
 
 /* =========================================================================
@@ -959,8 +727,6 @@ const INTRO_GO_AT = INTRO_WALK + INTRO_CD;  // момент свистка + «G
 const INTRO_END = INTRO_GO_AT + 0.9;
 const tunnel = { x: PITCH_L / 2, z: PITCH_W - 6 };
 let introT = 0, introWhistled = false;
-const fireworks = [];
-let fwTimer = 0, fwSeed = 1;
 
 // Звук свистка через Web Audio (контекст создаём по жесту — клику «Играть»).
 let audioCtx = null;
@@ -989,24 +755,6 @@ function whistle() {
   } catch (_) {}
 }
 
-const FW_COLORS = ["#ffe14d", "#ff6b6b", "#5ac8fa", "#7cfc98", "#ffffff", "#ff8f6b"];
-function spawnFirework() {
-  const cx = 30 + nrand(fwSeed * 2.3 + 1) * (P.cssW - 60);
-  const cy = 16 + nrand(fwSeed * 3.7 + 2) * (P.cssH * 0.34);
-  const col = FW_COLORS[Math.floor(nrand(fwSeed * 5.1) * FW_COLORS.length) % FW_COLORS.length];
-  const n = 20 + Math.floor(nrand(fwSeed * 1.9) * 12);
-  for (let i = 0; i < n; i++) {
-    const a = (i / n) * Math.PI * 2;
-    const sp = 50 + nrand(fwSeed * 7.7 + i) * 80;
-    fireworks.push({
-      x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 20,
-      life: 0.8 + nrand(fwSeed * 2.2 + i) * 0.6, max: 1.4,
-      size: 1.6 + nrand(i * 1.7) * 1.4, color: col,
-    });
-  }
-  fwSeed++;
-}
-
 function stepIntro(dt) {
   introT += dt;
   // Выход игроков из тоннеля к своим позициям (со стаггером — по одному).
@@ -1026,15 +774,7 @@ function stepIntro(dt) {
     for (const p of players) { p.x = p.home.x; p.z = p.home.z; p.vx = 0; p.vz = 0; }
   }
   camX = camClamp(PITCH_L / 2);
-
-  // Салюты
-  fwTimer -= dt;
-  if (fwTimer <= 0 && introT < INTRO_END - 0.1) { spawnFirework(); fwTimer = 0.28 + nrand(fwSeed * 1.3) * 0.35; }
-  for (let i = fireworks.length - 1; i >= 0; i--) {
-    const f = fireworks[i];
-    f.x += f.vx * dt; f.y += f.vy * dt; f.vy += 130 * dt; f.life -= dt;
-    if (f.life <= 0) fireworks.splice(i, 1);
-  }
+  // Салюты рисует 3D-сцена (по флагу introActive).
 
   if (!introWhistled && introT >= INTRO_GO_AT) { introWhistled = true; whistle(); }
   if (introT >= INTRO_END) beginPlay();
@@ -1045,58 +785,6 @@ function beginPlay() {
   active = null;
   state = "playing";
   document.body.classList.add("playing");
-}
-
-function drawTunnel() {
-  const base = project(tunnel.x, PITCH_W, 0);
-  const w = 120 * P.ppuFar, h = 28;
-  ctx.fillStyle = "#0a0d12";
-  roundRect(base.sx - w / 2, base.sy - h, w, h + 8, 6); ctx.fill();
-  ctx.fillStyle = "#04060a";
-  roundRect(base.sx - w / 2 + 6, base.sy - h + 4, w - 12, h - 2, 4); ctx.fill();
-  ctx.strokeStyle = "rgba(255,255,255,0.18)"; ctx.lineWidth = 2;
-  roundRect(base.sx - w / 2, base.sy - h, w, h + 8, 6); ctx.stroke();
-}
-
-function drawIntro() {
-  // Салюты (в воздухе — поверх сцены)
-  for (const f of fireworks) {
-    ctx.globalAlpha = Math.max(0, Math.min(1, f.life / f.max));
-    ctx.fillStyle = f.color;
-    ctx.beginPath(); ctx.arc(f.x, f.y, f.size, 0, Math.PI * 2); ctx.fill();
-  }
-  ctx.globalAlpha = 1;
-
-  ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  if (introT < INTRO_WALK) {
-    ctx.fillStyle = "rgba(255,255,255,0.95)";
-    ctx.font = `bold ${Math.round(P.cssW * 0.04)}px system-ui, sans-serif`;
-    ctx.fillText("ВЫХОД КОМАНД ⚽", P.cssW / 2, P.cssH * 0.11);
-    ctx.fillStyle = "rgba(255,255,255,0.6)";
-    ctx.font = `${Math.round(P.cssW * 0.02)}px system-ui, sans-serif`;
-    ctx.fillText("тап — пропустить", P.cssW / 2, P.cssH * 0.11 + P.cssW * 0.042);
-  } else if (introT < INTRO_GO_AT) {
-    const step = INTRO_CD / 3;
-    const n = Math.max(1, 3 - Math.floor((introT - INTRO_WALK) / step));
-    const within = ((introT - INTRO_WALK) % step) / step;
-    const s = 1 + (1 - within) * 0.7;
-    ctx.save();
-    ctx.translate(P.cssW / 2, P.cssH * 0.44); ctx.scale(s, s);
-    ctx.globalAlpha = Math.min(1, 0.4 + within);
-    ctx.fillStyle = "#ffffff";
-    ctx.font = `bold ${Math.round(P.cssW * 0.12)}px system-ui, sans-serif`;
-    ctx.fillText(String(n), 0, 0);
-    ctx.restore(); ctx.globalAlpha = 1;
-  } else {
-    const k = (introT - INTRO_GO_AT) / 0.9;
-    ctx.save();
-    ctx.translate(P.cssW / 2, P.cssH * 0.44); ctx.scale(1 + k * 0.9, 1 + k * 0.9);
-    ctx.globalAlpha = Math.max(0, 1 - k);
-    ctx.fillStyle = "#ffe14d";
-    ctx.font = `bold ${Math.round(P.cssW * 0.17)}px system-ui, sans-serif`;
-    ctx.fillText("GO!", 0, 0);
-    ctx.restore(); ctx.globalAlpha = 1;
-  }
 }
 
 // Тап во время заставки — пропустить к свистку.
@@ -1116,7 +804,7 @@ function startMatch() {
   kickoffReset(0);
   active = null;
   ensureAudio();
-  introT = 0; introWhistled = false; fireworks.length = 0; fwTimer = 0; fwSeed = 1;
+  introT = 0; introWhistled = false;
   state = "intro";
   el.overlay.classList.remove("show");
   document.body.classList.remove("playing"); // геймпад скрыт во время заставки
@@ -1143,6 +831,7 @@ if (!window.matchMedia("(display-mode: standalone)").matches) {
   el.installHint.hidden = false;
 }
 
+Scene3D.init(canvas, { PITCH_L, PITCH_W, GOAL_HALF, MOUTH_LO, MOUTH_HI });
 resize();
 // повторный расчёт после того, как layout устоялся
 setTimeout(resize, 60);

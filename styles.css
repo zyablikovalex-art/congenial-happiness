@@ -71,7 +71,57 @@ html, body {
   min-height: 0;
   display: block;
   touch-action: none;
-  background: #06371c;
+  background: #74a9dc;
+}
+
+/* ---------- Кинематографичные оверлеи (поверх 3D) ---------- */
+#flash {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.1s linear;
+  z-index: 8;
+}
+#cine {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 9;
+  text-align: center;
+}
+#cineBig {
+  font-weight: 900;
+  color: #fff;
+  opacity: 0;
+  font-size: 20vh;
+  line-height: 1;
+  letter-spacing: 1px;
+  text-shadow: 0 4px 22px rgba(0, 0, 0, 0.55), 0 0 6px rgba(0, 0, 0, 0.4);
+}
+#cineBig.show { opacity: 1; }
+#cineBig.pop { animation: cinePop 0.45s cubic-bezier(.2, .9, .3, 1.2) both; }
+#cineBig.go { color: #ffe14d; font-size: 26vh; }
+#cineBig.goal { color: #ffe14d; font-size: 22vh; }
+#cineSub {
+  position: absolute;
+  top: 11%;
+  left: 0;
+  right: 0;
+  font-size: 3vh;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.92);
+  opacity: 0;
+  transition: opacity 0.2s;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
+}
+@keyframes cinePop {
+  0% { transform: scale(1.8); opacity: 0; }
+  30% { opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
 }
 
 /* ---------- Шкала усилия ---------- */
