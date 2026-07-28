@@ -37,9 +37,9 @@ const SHOT_MIN = 480, SHOT_MAX = 940;
 // и только у самого максимума мяч перелетает перекладину.
 const SHOT_MIN_LOFT = 20, SHOT_MAX_LOFT = 470;
 // Навес (пас с подъёмом): дальность ≈ speed · (2·loft/GRAV) − потери на трении.
-// На полном заряде долетает с одной бровки до другой (ширина поля).
-const LOB_MIN_SPEED = 360, LOB_MAX_SPEED = 1000;
-const LOB_MIN_LOFT = 320, LOB_MAX_LOFT = 760;
+// При выбранном партнёре скорость дополнительно урезается, чтобы не перебросить.
+const LOB_MIN_SPEED = 240, LOB_MAX_SPEED = 700;
+const LOB_MIN_LOFT = 190, LOB_MAX_LOFT = 560;
 const CHARGE_TIME = 0.8;  // сек до полного заряда
 const CHARGE_MIN = 0.32;  // доля силы при мгновенном тапе
 const GRAV = 680;         // гравитация (меньше => мяч дольше в полёте, легче)
@@ -350,13 +350,12 @@ function doShoot(p, f) {
   kick(speed, dx / d, dz / d, loft);
 }
 
-function doPass(p, f) {
-  if (!p || ball.owner !== p) return;
-  if (f == null) f = 0.7;
+// Общее направление передачи — используется и пасом, и навесом, чтобы они
+// вели себя одинаково. Возвращает единичный вектор, партнёра-цель и дистанцию.
+function passDirection(p) {
   const attackDir = p.team === 0 ? 1 : -1;
-  const speed = PASS_MIN + f * (PASS_MAX - PASS_MIN);
 
-  // Направление прицела. У активного игрока — джойстик/клавиши (куда целишься),
+  // Прицел. У активного игрока — джойстик/клавиши (куда целишься),
   // иначе (в т.ч. ИИ) — куда смотрит игрок, в крайнем случае вперёд к воротам.
   let aimx = 0, aimz = 0;
   if (p === active) {
@@ -381,11 +380,18 @@ function doPass(p, f) {
     if (score > bestScore) { bestScore = score; best = t; }
   }
 
-  // Никого в секторе прицела — пас в направлении прицела (в свободную зону).
-  if (!best) { kick(speed, aimx, aimz, 0); return; }
+  // Никого в секторе прицела — передача в направлении прицела (в свободную зону).
+  if (!best) return { x: aimx, z: aimz, target: null, dist: 0 };
   const lx = best.x + aimx * 18, lz = best.z + aimz * 18; // небольшой вынос под ход
   const dx = lx - p.x, dz = lz - p.z, d = hyp(dx, dz) || 1;
-  kick(speed, dx / d, dz / d, 0);
+  return { x: dx / d, z: dz / d, target: best, dist: d };
+}
+
+function doPass(p, f) {
+  if (!p || ball.owner !== p) return;
+  if (f == null) f = 0.7;
+  const dir = passDirection(p);
+  kick(PASS_MIN + f * (PASS_MAX - PASS_MIN), dir.x, dir.z, 0);
 }
 
 // Навес: пас с подъёмом мяча от земли. Направление — как у паса (по прицелу/
@@ -393,35 +399,16 @@ function doPass(p, f) {
 function doLob(p, f) {
   if (!p || ball.owner !== p) return;
   if (f == null) f = 0.7;
-  const attackDir = p.team === 0 ? 1 : -1;
-  const speed = LOB_MIN_SPEED + f * (LOB_MAX_SPEED - LOB_MIN_SPEED);
+  const dir = passDirection(p);            // направление — как у обычного паса
+  let speed = LOB_MIN_SPEED + f * (LOB_MAX_SPEED - LOB_MIN_SPEED);
   const loft = LOB_MIN_LOFT + f * (LOB_MAX_LOFT - LOB_MIN_LOFT);
-
-  let aimx = 0, aimz = 0;
-  if (p === active) {
-    const iv = inputVector();
-    if (hyp(iv.x, iv.z) > 0.2) { aimx = iv.x; aimz = iv.z; }
+  // Если целимся в партнёра — не перебрасываем его: время полёта 2·loft/GRAV,
+  // значит нужная скорость ≈ дистанция / время (+ поправка на трение воздуха).
+  if (dir.target) {
+    const flight = 2 * loft / GRAV;
+    speed = Math.min(speed, (dir.dist / flight) * 1.12);
   }
-  if (aimx === 0 && aimz === 0) {
-    if (hyp(p.dirx, p.dirz) > 0.1) { aimx = p.dirx; aimz = p.dirz; }
-    else { aimx = attackDir; aimz = 0; }
-  }
-  const am = hyp(aimx, aimz) || 1; aimx /= am; aimz /= am;
-
-  // Партнёр в секторе прицела уточняет направление (навес дальнобойный).
-  let best = null, bestScore = -1e9;
-  for (const t of players) {
-    if (t.team !== p.team || t === p || t.isGK) continue;
-    const dx = t.x - p.x, dz = t.z - p.z, d = hyp(dx, dz);
-    if (d < 40 || d > 640) continue;
-    const align = (dx * aimx + dz * aimz) / d;
-    if (align < 0.30) continue;
-    const score = align * 1.8 - d / 700;
-    if (score > bestScore) { bestScore = score; best = t; }
-  }
-  let dx = aimx, dz = aimz;
-  if (best) { const lx = best.x - p.x, lz = best.z - p.z, d = hyp(lx, lz) || 1; dx = lx / d; dz = lz / d; }
-  kick(speed, dx, dz, loft);
+  kick(speed, dir.x, dir.z, loft);
 }
 
 // Отбор/перехват: рывок к мячу и захват при сближении.

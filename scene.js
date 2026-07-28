@@ -9,7 +9,7 @@ window.Scene3D = (function () {
   const T = window.THREE;
   const S = 0.02; // мир -> три единицы
 
-  const RUNOFF = 300; // мировых единиц газона за каждой линией (видно, когда камера у бровки)
+  const RUNOFF = 420; // мировых единиц газона за каждой линией (видно, когда камера у бровки)
 
   let cfg, renderer, scene, camera;
   let L, W, halfL, halfW, MOUTH_LO, MOUTH_HI, GOAL_HALF;
@@ -487,7 +487,7 @@ window.Scene3D = (function () {
 
     // Камера: «трансляционный» ракурс — ANGLE градусов к горизонту (меньше =>
     // ниже и более сбоку). Следит за мячом по длине (X) и по ширине (Z).
-    const ANGLE = 50 * Math.PI / 180;
+    const ANGLE = 40 * Math.PI / 180;
     const CAM_DEPTH = 7.5;   // отступ камеры назад от фокуса (больше => шире обзор)
     const CAM_AHEAD = 2.0;   // насколько смотреть вперёд от фокуса
     const CAM_LOOK_Y = 2.0;
