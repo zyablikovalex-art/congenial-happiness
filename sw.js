@@ -2,7 +2,7 @@
 // Strategy: network-first (so a new deploy is always picked up when online),
 // with the cache used only as an offline fallback. This avoids users getting
 // stuck on a stale cached version after an update.
-const CACHE = "mini-football-v23";
+const CACHE = "mini-football-v24";
 const ASSETS = [
   "./",
   "./index.html",
