@@ -306,9 +306,9 @@ window.Scene3D = (function () {
     scene.add(fwPoints);
   }
   function spawnBurst() {
-    const cx = -14 + nr(fwSeed * 2.3 + 1) * 28;
-    const cy = 7 + nr(fwSeed * 3.7 + 2) * 6;
-    const cz = -7 + nr(fwSeed * 4.9 + 3) * 16;
+    const cx = -22 + nr(fwSeed * 2.3 + 1) * 44;
+    const cy = 8 + nr(fwSeed * 3.7 + 2) * 7;
+    const cz = -10 + nr(fwSeed * 4.9 + 3) * 26;
     const col = FW_COLORS[Math.floor(nr(fwSeed * 5.1) * FW_COLORS.length) % FW_COLORS.length];
     const n = 24 + Math.floor(nr(fwSeed * 1.9) * 14);
     for (let i = 0; i < n && fwParts.length < FW_MAX; i++) {
@@ -360,9 +360,9 @@ window.Scene3D = (function () {
 
     scene = new T.Scene();
     scene.background = new T.Color(0x74a9dc);
-    scene.fog = new T.Fog(0x74a9dc, 34, 60);
+    scene.fog = new T.Fog(0x74a9dc, 70, 160);
 
-    camera = new T.PerspectiveCamera(46, 1, 0.1, 200);
+    camera = new T.PerspectiveCamera(50, 1, 0.1, 300);
 
     // Свет
     scene.add(new T.HemisphereLight(0xbad7ff, 0x3f6a33, 0.95));
@@ -480,10 +480,18 @@ window.Scene3D = (function () {
     // Салюты во время заставки
     updateFireworks(dt, gs.state === "intro" && gs.introActive);
 
-    // Камера следует за мячом по длине
-    const camTX = (gs.camX - L / 2) * S;
-    camera.position.set(camTX, 7.2, -halfW - 8.5);
-    camera.lookAt(camTX, 1.1, -halfW * 0.15);
+    // Камера: широкоугольный «трансляционный» ракурс ~35° к горизонту,
+    // следит за мячом по длине (X) и мягко по ширине (Z).
+    const fx = (gs.camX - L / 2) * S;
+    const fz = ((gs.camZ != null ? gs.camZ : W / 2) - W / 2) * S;
+    const CAM_DEPTH = 8.5;   // отступ камеры назад от фокуса (три ед.)
+    const CAM_AHEAD = 2.0;   // насколько смотреть вперёд от фокуса
+    const CAM_LOOK_Y = 2.2;
+    const ANGLE = 35 * Math.PI / 180;
+    const horiz = CAM_DEPTH + CAM_AHEAD;
+    const CAM_H = CAM_LOOK_Y + Math.tan(ANGLE) * horiz;
+    camera.position.set(fx, CAM_H, fz - CAM_DEPTH);
+    camera.lookAt(fx, CAM_LOOK_Y, fz + CAM_AHEAD);
 
     renderer.render(scene, camera);
   }

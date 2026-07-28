@@ -8,12 +8,10 @@
    ========================================================================= */
 
 // ---- Мир ----
-const PITCH_L = 1200;     // длина поля (ось x: 0 — левые ворота, PITCH_L — правые)
-const PITCH_W = 900;      // ширина/глубина (ось z: 0 — ближняя бровка, PITCH_W — дальняя) — шире
-const GOAL_HALF = 140;    // половина ширины створа ворот (по z)
-const VIS_NEAR = 554;     // сколько мировых единиц длины видно у ближней бровки
-                          // (< PITCH_L => всё поле не влезает, камера ездит).
-                          // Меньше => поле крупнее на экране при тех же игроках.
+const PITCH_L = 2400;     // длина поля (ось x) — увеличено вдвое
+const PITCH_W = 1800;     // ширина/глубина (ось z) — увеличено вдвое
+const GOAL_HALF = 140;    // половина ширины створа ворот (по z) — прежнего размера
+const VIS_NEAR = 900;     // диапазон панорамирования камеры по длине (мировые единицы)
 const GOAL_DEPTH_H = 130; // макс. высота мяча, при которой он ещё влетает в ворота
 const PLR_R = 15;         // радиус игрока (мир)
 const BALL_R = 8;
@@ -42,6 +40,7 @@ const BOUNCE = 0.55;
 
 const canvas = document.getElementById("pitch");
 let camX = PITCH_L / 2; // центр камеры по длине поля (едет за мячом)
+let camZ = PITCH_W / 2; // фокус камеры по ширине (мягко следует за мячом)
 
 function resize() { if (window.Scene3D) Scene3D.resize(); }
 window.addEventListener("resize", resize);
@@ -263,17 +262,18 @@ window.addEventListener("keyup", (e) => {
 });
 
 function inputVector() {
-  // Клавиатура (только стрелки, полная скорость)
+  // Клавиатура (только стрелки, полная скорость).
+  // Камера смотрит вдоль -x, поэтому экранная «право/лево» = мировая -x/+x.
   let dx = 0, dz = 0;
-  if (keyHeld.has("arrowleft")) dx -= 1;
-  if (keyHeld.has("arrowright")) dx += 1;
-  if (keyHeld.has("arrowup")) dz += 1;   // вверх по экрану = дальняя сторона
+  if (keyHeld.has("arrowleft")) dx += 1;   // влево на экране = +x в мире
+  if (keyHeld.has("arrowright")) dx -= 1;  // вправо на экране = -x в мире
+  if (keyHeld.has("arrowup")) dz += 1;     // вверх по экрану = дальняя сторона
   if (keyHeld.has("arrowdown")) dz -= 1;
   if (dx || dz) { const m = hyp(dx, dz); return { x: dx / m, z: dz / m }; }
   // Джойстик (аналогово: модуль вектора = сила нажатия)
   if (stick.active) {
     const mag = hyp(stick.jx, stick.jy);
-    if (mag > 0.14) return { x: stick.jx, z: -stick.jy }; // экранный низ (jy>0) => к ближней бровке (z-)
+    if (mag > 0.14) return { x: -stick.jx, z: -stick.jy }; // палец-вправо => экранное вправо
   }
   return { x: 0, z: 0 };
 }
@@ -586,6 +586,7 @@ function kickoffReset(kickTeam) {
   const starter = fwd || players.find((p) => p.team === kickTeam && !p.isGK);
   if (starter) { starter.x = PITCH_L / 2; starter.z = PITCH_W / 2 + 6; }
   camX = camClamp(PITCH_L / 2); // камера в центр без долгой прокрутки
+  camZ = PITCH_W / 2;
   resetCharge();
 }
 
@@ -667,9 +668,11 @@ function step(dt) {
 
   separatePlayers();
 
-  // Камера едет за мячом по длине поля (плавно).
+  // Камера едет за мячом по длине поля (плавно) и мягко следит по ширине.
   const target = camClamp(ball.x);
   camX += (target - camX) * Math.min(1, 2.6 * dt);
+  const tz = clamp(ball.z, PITCH_W * 0.34, PITCH_W * 0.66);
+  camZ += (tz - camZ) * Math.min(1, 2.0 * dt);
 
   const m = Math.floor(timeLeft / 60), s = Math.floor(timeLeft % 60);
   el.clock.textContent = `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
@@ -680,7 +683,7 @@ function step(dt) {
    ========================================================================= */
 function draw(dt) {
   Scene3D.render({
-    players, ball, camX, active, state,
+    players, ball, camX, camZ, active, state,
     introActive: state === "intro" && introT < INTRO_END - 0.1,
   }, dt || 0);
   updateOverlays();
@@ -775,6 +778,7 @@ function stepIntro(dt) {
     for (const p of players) { p.x = p.home.x; p.z = p.home.z; p.vx = 0; p.vz = 0; }
   }
   camX = camClamp(PITCH_L / 2);
+  camZ = PITCH_W / 2;
   // Салюты рисует 3D-сцена (по флагу introActive).
 
   if (!introWhistled && introT >= INTRO_GO_AT) { introWhistled = true; whistle(); }
