@@ -233,6 +233,13 @@ body.playing #gamepad { display: flex; }
 .abtn.pass   { bottom: 0; left: 80px; background: rgba(47, 123, 255, 0.72); }
 .abtn.switch { left: 0;   top: 80px;  background: rgba(46, 191, 113, 0.78); font-size: 30px; }
 .abtn.shoot  { right: 0;  top: 80px;  background: rgba(232, 68, 60, 0.82); }
+/* Навес — в центре ромба; offset = (248 - 60) / 2 = 94px */
+.abtn.lob {
+  left: 94px; top: 94px;
+  width: 60px; height: 60px;
+  font-size: 12px;
+  background: rgba(64, 200, 106, 0.82);
+}
 .abtn.pressed { filter: brightness(1.35); }
 
 /* ---------- Оверлей ---------- */
@@ -310,4 +317,6 @@ button#startBtn:active { transform: scale(0.96); }
   .abtn.pass   { left: 68px; }
   .abtn.switch { top: 68px; }
   .abtn.shoot  { top: 68px; }
+  /* offset = (214 - 52) / 2 = 81px */
+  .abtn.lob { left: 81px; top: 81px; width: 52px; height: 52px; }
 }

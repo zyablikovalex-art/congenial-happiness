@@ -33,6 +33,9 @@ const DRIBBLE_AHEAD = 24; // насколько мяч выносится впе
 // Сила паса/удара зависит от заряда шкалы усилия (min при коротком тапе, max при полном).
 const PASS_MIN = 220, PASS_MAX = 500;
 const SHOT_MIN = 360, SHOT_MAX = 620;
+// Навес (пас с подъёмом): горизонтальная скорость и вертикальный подброс растут с зарядом.
+const LOB_MIN_SPEED = 175, LOB_MAX_SPEED = 360;
+const LOB_MIN_LOFT = 260, LOB_MAX_LOFT = 540;
 const CHARGE_TIME = 0.8;  // сек до полного заряда
 const CHARGE_MIN = 0.32;  // доля силы при мгновенном тапе
 const GRAV = 900;
@@ -151,7 +154,8 @@ function showPowerBar(action, frac) {
   if (!barEl || !barFillEl) return;
   barEl.hidden = false;
   barFillEl.style.width = Math.round(frac * 100) + "%";
-  barFillEl.style.background = action === "shoot" ? "#ff5a4d" : "#4a90ff";
+  barFillEl.style.background =
+    action === "shoot" ? "#ff5a4d" : action === "lob" ? "#40c86a" : "#4a90ff";
 }
 function hidePowerBar() { if (barEl) barEl.hidden = true; }
 
@@ -163,6 +167,10 @@ function beginPass() {
 function beginShoot() {
   if (state !== "playing") return;
   if (active && ball.owner === active) { charge.action = "shoot"; charge.t = 0; }
+}
+function beginLob() {
+  if (state !== "playing") return;
+  if (active && ball.owner === active) { charge.action = "lob"; charge.t = 0; }
 }
 function releaseCharge(action) {
   if (charge.action !== action) return;
@@ -221,6 +229,7 @@ if (el.gamepad) {
       btn.classList.add("pressed");
       if (name === "pass") beginPass();
       else if (name === "shoot") beginShoot();
+      else if (name === "lob") beginLob();
       else if (name === "switch") { if (state === "playing") actionQueue.push("switch"); }
       else pad[name] = true; // sprint
       try { btn.setPointerCapture(e.pointerId); } catch (_) {}
@@ -229,6 +238,7 @@ if (el.gamepad) {
       btn.classList.remove("pressed");
       if (name === "pass") releaseCharge("pass");
       else if (name === "shoot") releaseCharge("shoot");
+      else if (name === "lob") releaseCharge("lob");
       else if (name !== "switch") pad[name] = false;
     };
     btn.addEventListener("pointerdown", press);
@@ -245,12 +255,13 @@ const keyHeld = new Set();
 const MOVE_KEYS = ["arrowup", "arrowdown", "arrowleft", "arrowright"];
 window.addEventListener("keydown", (e) => {
   const k = e.key.toLowerCase();
-  if (MOVE_KEYS.includes(k) || k === " " || k === "shift" || k === "s" || k === "d") e.preventDefault();
+  if (MOVE_KEYS.includes(k) || k === " " || k === "shift" || k === "s" || k === "d" || k === "a") e.preventDefault();
   if (keyHeld.has(k)) return; // без автоповтора
   keyHeld.add(k);
   if (state === "playing") {
     if (k === "s") beginPass();
     if (k === "d") beginShoot();
+    if (k === "a") beginLob();
     if (k === " ") actionQueue.push("switch");
   }
 });
@@ -259,6 +270,7 @@ window.addEventListener("keyup", (e) => {
   keyHeld.delete(k);
   if (k === "s") releaseCharge("pass");
   if (k === "d") releaseCharge("shoot");
+  if (k === "a") releaseCharge("lob");
 });
 
 function inputVector() {
@@ -370,6 +382,42 @@ function doPass(p, f) {
   kick(speed, dx / d, dz / d, 0);
 }
 
+// Навес: пас с подъёмом мяча от земли. Направление — как у паса (по прицелу/
+// партнёру), сила и высота растут с зарядом f.
+function doLob(p, f) {
+  if (!p || ball.owner !== p) return;
+  if (f == null) f = 0.7;
+  const attackDir = p.team === 0 ? 1 : -1;
+  const speed = LOB_MIN_SPEED + f * (LOB_MAX_SPEED - LOB_MIN_SPEED);
+  const loft = LOB_MIN_LOFT + f * (LOB_MAX_LOFT - LOB_MIN_LOFT);
+
+  let aimx = 0, aimz = 0;
+  if (p === active) {
+    const iv = inputVector();
+    if (hyp(iv.x, iv.z) > 0.2) { aimx = iv.x; aimz = iv.z; }
+  }
+  if (aimx === 0 && aimz === 0) {
+    if (hyp(p.dirx, p.dirz) > 0.1) { aimx = p.dirx; aimz = p.dirz; }
+    else { aimx = attackDir; aimz = 0; }
+  }
+  const am = hyp(aimx, aimz) || 1; aimx /= am; aimz /= am;
+
+  // Партнёр в секторе прицела уточняет направление (навес дальнобойный).
+  let best = null, bestScore = -1e9;
+  for (const t of players) {
+    if (t.team !== p.team || t === p || t.isGK) continue;
+    const dx = t.x - p.x, dz = t.z - p.z, d = hyp(dx, dz);
+    if (d < 40 || d > 640) continue;
+    const align = (dx * aimx + dz * aimz) / d;
+    if (align < 0.30) continue;
+    const score = align * 1.8 - d / 700;
+    if (score > bestScore) { bestScore = score; best = t; }
+  }
+  let dx = aimx, dz = aimz;
+  if (best) { const lx = best.x - p.x, lz = best.z - p.z, d = hyp(lx, lz) || 1; dx = lx / d; dz = lz / d; }
+  kick(speed, dx, dz, loft);
+}
+
 // Отбор/перехват: рывок к мячу и захват при сближении.
 function doTackle(p) {
   if (!p || ball.owner === p) return;
@@ -434,8 +482,9 @@ function resolvePossession(dt) {
         }
       }
     }
-  } else if (ball.cooldown <= 0) {
-    // Свободный мяч — ближайший в радиусе получает контроль
+  } else if (ball.cooldown <= 0 && ball.h < 24) {
+    // Свободный мяч у земли — ближайший в радиусе получает контроль
+    // (высоко летящий навес не «ловится» из-под ног).
     let best = null, bd = CTRL_R;
     for (const p of players) {
       const d = dist(p, ball);
@@ -651,6 +700,7 @@ function step(dt) {
     if (a === "switch") cycleActivePlayer();
     else if (a.type === "tackle") doTackle(active);
     else if (a.type === "pass") doPass(active, a.power);
+    else if (a.type === "lob") doLob(active, a.power);
     else if (a.type === "shoot") doShoot(active, a.power);
   }
 
