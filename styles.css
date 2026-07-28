@@ -56,6 +56,12 @@ html, body {
 .score .nums { font-size: 22px; font-variant-numeric: tabular-nums; }
 .score .nums b { font-size: 24px; }
 
+.hud-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 #clock {
   font-size: 20px;
   font-weight: 700;
@@ -64,6 +70,117 @@ html, body {
   padding: 4px 12px;
   border-radius: 999px;
 }
+
+#settingsBtn {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(0, 0, 0, 0.3);
+  color: #fff;
+  font-size: 19px;
+  line-height: 1;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  cursor: pointer;
+  touch-action: none;
+}
+#settingsBtn:active { transform: scale(0.94); }
+
+/* ---------- Панель настроек ---------- */
+/* Панель сдвинута влево и почти не затемняет сцену — видно, как меняется вид. */
+#settings {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 16px;
+  background: rgba(3, 25, 13, 0.28);
+  z-index: 15;
+}
+#settings[hidden] { display: none; }
+#settings .card {
+  max-width: 330px;
+  padding: 18px 18px 20px;
+  background: rgba(13, 79, 42, 0.94);
+}
+#settings h2 { margin: 0 0 16px; font-size: 20px; }
+
+.setting {
+  display: block;
+  text-align: left;
+  margin-bottom: 16px;
+}
+.setting-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 15px;
+  margin-bottom: 6px;
+}
+.setting-row b { font-size: 17px; color: #ffe14d; font-variant-numeric: tabular-nums; }
+.setting-hint { display: block; font-size: 12px; opacity: 0.6; margin-top: 4px; }
+
+.setting input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 26px;
+  background: transparent;
+  touch-action: none;
+}
+.setting input[type="range"]::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+}
+.setting input[type="range"]::-moz-range-track {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+}
+.setting input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 26px;
+  height: 26px;
+  margin-top: -9px;
+  border-radius: 50%;
+  background: #ffe14d;
+  border: 2px solid rgba(255, 255, 255, 0.7);
+}
+.setting input[type="range"]::-moz-range-thumb {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #ffe14d;
+  border: 2px solid rgba(255, 255, 255, 0.7);
+}
+
+.settings-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+.settings-actions button {
+  appearance: none;
+  border: 0;
+  background: #ffe14d;
+  color: #06371c;
+  font-size: 16px;
+  font-weight: 700;
+  padding: 11px 24px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.settings-actions .btn-ghost {
+  background: transparent;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+.settings-actions button:active { transform: scale(0.96); }
 
 #pitch {
   flex: 1 1 auto;

@@ -125,7 +125,63 @@ const el = {
   cineBig: document.getElementById("cineBig"),
   cineSub: document.getElementById("cineSub"),
   flash: document.getElementById("flash"),
+  settingsBtn: document.getElementById("settingsBtn"),
+  settings: document.getElementById("settings"),
+  angleRange: document.getElementById("angleRange"),
+  heightRange: document.getElementById("heightRange"),
+  angleVal: document.getElementById("angleVal"),
+  heightVal: document.getElementById("heightVal"),
+  settingsClose: document.getElementById("settingsClose"),
+  settingsReset: document.getElementById("settingsReset"),
 };
+
+/* =========================================================================
+   Настройки камеры (угол/высота) — панель с ползунками, сохраняются локально
+   ========================================================================= */
+const CAM_DEFAULTS = { angle: 40, height: 10 };
+let paused = false;
+
+function applyCamSettings(s, save) {
+  Scene3D.setCamera(s);
+  const cur = Scene3D.getCamera();
+  if (el.angleRange) el.angleRange.value = cur.angle;
+  if (el.heightRange) el.heightRange.value = cur.height;
+  if (el.angleVal) el.angleVal.textContent = Math.round(cur.angle) + "°";
+  if (el.heightVal) el.heightVal.textContent = cur.height;
+  if (save) {
+    try { localStorage.setItem("cam", JSON.stringify(cur)); } catch (_) {}
+  }
+}
+
+function loadCamSettings() {
+  let s = CAM_DEFAULTS;
+  try {
+    const raw = localStorage.getItem("cam");
+    if (raw) { const p = JSON.parse(raw); if (p && p.angle != null) s = p; }
+  } catch (_) {}
+  applyCamSettings(s, false);
+}
+
+function openSettings() {
+  if (!el.settings) return;
+  paused = true;
+  resetCharge();
+  pad.sprint = false;
+  stickReset();
+  keyHeld.clear();
+  el.settings.hidden = false;
+}
+function closeSettings() {
+  if (!el.settings) return;
+  el.settings.hidden = true;
+  paused = false;
+}
+
+if (el.settingsBtn) el.settingsBtn.addEventListener("click", openSettings);
+if (el.settingsClose) el.settingsClose.addEventListener("click", closeSettings);
+if (el.settingsReset) el.settingsReset.addEventListener("click", () => applyCamSettings(CAM_DEFAULTS, true));
+if (el.angleRange) el.angleRange.addEventListener("input", () => applyCamSettings({ angle: +el.angleRange.value }, true));
+if (el.heightRange) el.heightRange.addEventListener("input", () => applyCamSettings({ height: +el.heightRange.value }, true));
 
 /* =========================================================================
    Запрет масштабирования на мобильных (iOS Safari игнорирует user-scalable=no).
@@ -706,7 +762,9 @@ function frame(ts) {
   last = ts;
   if (dt > 0.05) dt = 0.05;
 
-  if (state === "playing") {
+  if (paused) {
+    dt = 0; // сцена рисуется, но матч стоит, пока открыты настройки
+  } else if (state === "playing") {
     F++;
     timeLeft -= dt;
     if (celebrate > 0) celebrate -= dt;
@@ -939,6 +997,7 @@ if (!window.matchMedia("(display-mode: standalone)").matches) {
 }
 
 Scene3D.init(canvas, { PITCH_L, PITCH_W, GOAL_HALF, MOUTH_LO, MOUTH_HI });
+loadCamSettings();
 resize();
 // повторный расчёт после того, как layout устоялся
 setTimeout(resize, 60);

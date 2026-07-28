@@ -11,6 +11,20 @@ window.Scene3D = (function () {
 
   const RUNOFF = 420; // мировых единиц газона за каждой линией (видно, когда камера у бровки)
 
+  // Настройки камеры (меняются из UI). angle — наклон к горизонту (0..90),
+  // height — высота камеры в единицах сцены. Дистанция выводится из них.
+  const camCfg = { angle: 40, height: 10 };
+  const CAM_LOOK_Y = 2.0;   // высота точки, на которую смотрит камера
+  const CAM_AHEAD = 2.0;    // фокус чуть впереди мяча
+  const CAM_MAX_DIST = 70;  // ограничение на очень пологих углах
+
+  function setCamera(opts) {
+    if (!opts) return;
+    if (opts.angle != null) camCfg.angle = Math.max(0, Math.min(90, +opts.angle || 0));
+    if (opts.height != null) camCfg.height = Math.max(3, Math.min(30, +opts.height || 0));
+  }
+  function getCamera() { return { angle: camCfg.angle, height: camCfg.height }; }
+
   let cfg, renderer, scene, camera;
   let L, W, halfL, halfW, MOUTH_LO, MOUTH_HI, GOAL_HALF;
   let groundHalfX, groundHalfZ; // половина размера газона в единицах сцены
@@ -485,23 +499,22 @@ window.Scene3D = (function () {
     // Салюты во время заставки
     updateFireworks(dt, gs.state === "intro" && gs.introActive);
 
-    // Камера: «трансляционный» ракурс — ANGLE градусов к горизонту (меньше =>
-    // ниже и более сбоку). Следит за мячом по длине (X) и по ширине (Z).
-    const ANGLE = 40 * Math.PI / 180;
-    const CAM_DEPTH = 7.5;   // отступ камеры назад от фокуса (больше => шире обзор)
-    const CAM_AHEAD = 2.0;   // насколько смотреть вперёд от фокуса
-    const CAM_LOOK_Y = 2.0;
-    const CAM_H = CAM_LOOK_Y + Math.tan(ANGLE) * (CAM_DEPTH + CAM_AHEAD);
+    // Камера: угол к горизонту и высота задаются настройками, дистанция
+    // выводится из них (height / tan(angle)). Следит за мячом по X и Z.
+    const ang = Math.max(3, Math.min(88, camCfg.angle)) * Math.PI / 180;
+    const camY = Math.max(camCfg.height, CAM_LOOK_Y + 0.5);
+    const horiz = Math.min((camY - CAM_LOOK_Y) / Math.tan(ang), CAM_MAX_DIST);
 
     const fx = (gs.camX - L / 2) * S;
     const fz = ((gs.camZ != null ? gs.camZ : W / 2) - W / 2) * S;
+    const lookZ = fz + CAM_AHEAD;
     // Не заезжаем за газон/трибуны, когда камера опускается к ближней бровке.
-    const cz = Math.max(fz - CAM_DEPTH, -(groundHalfZ - 1));
-    camera.position.set(fx, CAM_H, cz);
-    camera.lookAt(fx, CAM_LOOK_Y, fz + CAM_AHEAD);
+    const cz = Math.max(lookZ - horiz, -(groundHalfZ - 1));
+    camera.position.set(fx, camY, cz);
+    camera.lookAt(fx, CAM_LOOK_Y, lookZ);
 
     renderer.render(scene, camera);
   }
 
-  return { init, resize, render };
+  return { init, resize, render, setCamera, getCamera };
 })();

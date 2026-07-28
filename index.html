@@ -17,7 +17,10 @@
       <span class="nums"><b id="scoreYou">0</b> : <b id="scoreCpu">0</b></span>
       <span class="team cpu">ИИ</span>
     </div>
-    <div id="clock">02:00</div>
+    <div class="hud-right">
+      <div id="clock">02:00</div>
+      <button id="settingsBtn" aria-label="Настройки">⚙</button>
+    </div>
   </header>
 
   <canvas id="pitch" aria-label="Игровое поле"></canvas>
@@ -61,6 +64,27 @@
       </p>
       <button id="startBtn">Играть</button>
       <p class="hint" id="installHint" hidden>Совет: «Добавить на экран Домой», чтобы играть как приложение.</p>
+    </div>
+  </div>
+
+  <!-- Настройки камеры -->
+  <div id="settings" hidden>
+    <div class="card">
+      <h2>Камера</h2>
+      <label class="setting">
+        <span class="setting-row">Угол к горизонту <b id="angleVal">40°</b></span>
+        <input type="range" id="angleRange" min="0" max="90" step="1" value="40" />
+        <span class="setting-hint">0° — сбоку у газона · 90° — строго сверху</span>
+      </label>
+      <label class="setting">
+        <span class="setting-row">Высота <b id="heightVal">10</b></span>
+        <input type="range" id="heightRange" min="3" max="30" step="0.5" value="10" />
+        <span class="setting-hint">выше — видно больше поля</span>
+      </label>
+      <div class="settings-actions">
+        <button id="settingsReset" class="btn-ghost">Сброс</button>
+        <button id="settingsClose">Готово</button>
+      </div>
     </div>
   </div>
 
