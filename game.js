@@ -115,7 +115,6 @@ let restartMsg = "", restartMsgT = 0; // подпись типа возобно�
 // ввод и рисуем присланное состояние.
 let netMode = "ai";
 let myTeam = 0;            // за какую команду играю я (гость играет за 1)
-let viewFlip = 1;          // -1 у гостя: вид и управление разворачиваются
 const activeOf = [null, null]; // активный игрок каждой команды
 let active = null;         // активный игрок МОЕЙ команды (= activeOf[myTeam])
 // Ввод соперника по сети (используется хостом)
@@ -361,12 +360,11 @@ function inputVector() {
   if (keyHeld.has("arrowright")) dx -= 1;  // вправо на экране = -x в мире
   if (keyHeld.has("arrowup")) dz += 1;     // вверх по экрану = дальняя сторона
   if (keyHeld.has("arrowdown")) dz -= 1;
-  // viewFlip = -1 у гостя: его камера развёрнута, значит и мир зеркалим.
-  if (dx || dz) { const m = hyp(dx, dz); return { x: viewFlip * dx / m, z: viewFlip * dz / m }; }
+  if (dx || dz) { const m = hyp(dx, dz); return { x: dx / m, z: dz / m }; }
   // Джойстик (аналогово: модуль вектора = сила нажатия)
   if (stick.active) {
     const mag = hyp(stick.jx, stick.jy);
-    if (mag > 0.14) return { x: -viewFlip * stick.jx, z: -viewFlip * stick.jy };
+    if (mag > 0.14) return { x: -stick.jx, z: -stick.jy };
   }
   return { x: 0, z: 0 };
 }
@@ -1031,7 +1029,7 @@ function updateScoreHud() {
    ========================================================================= */
 function draw(dt) {
   Scene3D.render({
-    players, ball, camX, camZ, active, state, flip: viewFlip < 0,
+    players, ball, camX, camZ, active, state,
     introActive: state === "intro" && introT < INTRO_END - 0.1,
   }, dt || 0);
   updateOverlays();
@@ -1200,7 +1198,6 @@ el.startBtn.addEventListener("click", () => {
 function setMode(mode, team) {
   netMode = mode;
   myTeam = team;
-  viewFlip = team === 1 ? -1 : 1;   // гость смотрит с другой стороны
   active = activeOf[myTeam];
   updateScoreHud();
   const label = document.getElementById("teamCpu");
