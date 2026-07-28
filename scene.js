@@ -507,14 +507,16 @@ window.Scene3D = (function () {
 
     const fx = (gs.camX - L / 2) * S;
     const fz = ((gs.camZ != null ? gs.camZ : W / 2) - W / 2) * S;
-    const lookZ = fz + CAM_AHEAD;
-    // Не заезжаем за газон/трибуны, когда камера опускается к ближней бровке.
-    const cz = Math.max(lookZ - horiz, -(groundHalfZ - 1));
-    // flip — вид с противоположной стороны (для второго игрока по сети),
-    // чтобы он тоже атаковал «вправо».
-    const f = gs.flip ? -1 : 1;
-    camera.position.set(f * fx, camY, f * cz);
-    camera.lookAt(f * fx, CAM_LOOK_Y, f * lookZ);
+    // flip — камера встаёт у противоположной бровки и смотрит навстречу.
+    // Точка фокуса остаётся на мяче: зеркалим только сторону обзора,
+    // иначе камера уезжает в пустую половину поля.
+    const dir = gs.flip ? -1 : 1;
+    const lookZ = fz + CAM_AHEAD * dir;
+    let cz = lookZ - horiz * dir;
+    // Не заезжаем за газон/трибуны, когда камера опускается к своей бровке.
+    cz = dir > 0 ? Math.max(cz, -(groundHalfZ - 1)) : Math.min(cz, groundHalfZ - 1);
+    camera.position.set(fx, camY, cz);
+    camera.lookAt(fx, CAM_LOOK_Y, lookZ);
 
     renderer.render(scene, camera);
   }
