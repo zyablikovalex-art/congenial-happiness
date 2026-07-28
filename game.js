@@ -240,34 +240,35 @@ if (el.gamepad) {
   });
 }
 
-// Клавиатура (ПК)
+// Клавиатура (ПК): стрелки — движение, D — удар, S — пас/отбор,
+// Пробел — смена игрока, Shift — ускорение.
 const keyHeld = new Set();
-const MOVE_KEYS = ["arrowup", "arrowdown", "arrowleft", "arrowright", "w", "a", "s", "d"];
+const MOVE_KEYS = ["arrowup", "arrowdown", "arrowleft", "arrowright"];
 window.addEventListener("keydown", (e) => {
   const k = e.key.toLowerCase();
-  if (MOVE_KEYS.includes(k) || k === " " || k === "shift" || k === "j" || k === "l" || k === "k") e.preventDefault();
+  if (MOVE_KEYS.includes(k) || k === " " || k === "shift" || k === "s" || k === "d") e.preventDefault();
   if (keyHeld.has(k)) return; // без автоповтора
   keyHeld.add(k);
   if (state === "playing") {
-    if (k === "j" || k === " ") beginPass();
-    if (k === "l" || k === "enter") beginShoot();
-    if (k === "k") actionQueue.push("switch");
+    if (k === "s") beginPass();
+    if (k === "d") beginShoot();
+    if (k === " ") actionQueue.push("switch");
   }
 });
 window.addEventListener("keyup", (e) => {
   const k = e.key.toLowerCase();
   keyHeld.delete(k);
-  if (k === "j" || k === " ") releaseCharge("pass");
-  if (k === "l" || k === "enter") releaseCharge("shoot");
+  if (k === "s") releaseCharge("pass");
+  if (k === "d") releaseCharge("shoot");
 });
 
 function inputVector() {
-  // Клавиатура (дискретно, полная скорость)
+  // Клавиатура (только стрелки, полная скорость)
   let dx = 0, dz = 0;
-  if (keyHeld.has("arrowleft") || keyHeld.has("a")) dx -= 1;
-  if (keyHeld.has("arrowright") || keyHeld.has("d")) dx += 1;
-  if (keyHeld.has("arrowup") || keyHeld.has("w")) dz += 1;   // вверх по экрану = дальняя сторона
-  if (keyHeld.has("arrowdown") || keyHeld.has("s")) dz -= 1;
+  if (keyHeld.has("arrowleft")) dx -= 1;
+  if (keyHeld.has("arrowright")) dx += 1;
+  if (keyHeld.has("arrowup")) dz += 1;   // вверх по экрану = дальняя сторона
+  if (keyHeld.has("arrowdown")) dz -= 1;
   if (dx || dz) { const m = hyp(dx, dz); return { x: dx / m, z: dz / m }; }
   // Джойстик (аналогово: модуль вектора = сила нажатия)
   if (stick.active) {
