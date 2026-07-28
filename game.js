@@ -897,8 +897,8 @@ function updateClock() {
 /* =========================================================================
    Сеть: хост шлёт снимки состояния, гость шлёт ввод и рисует присланное
    ========================================================================= */
-const SNAP_HZ = 20, INPUT_HZ = 30;
-let snapAcc = 0, inputAcc = 0;
+const SNAP_HZ = 30, INPUT_HZ = 30;
+let snapAcc = 0, inputAcc = 0, lastSnapAt = 0;
 const RESTART_TEXT = ["", "Вброс", "Удар от ворот", "Угловой"];
 let restartCode = 0;
 const STATES = ["menu", "intro", "playing", "over"];
@@ -927,6 +927,10 @@ function applySnapshot(a) {
   const st = STATES[a[0]] || "playing";
   if (st !== state) setStateFromNet(st);
   scoreYou = a[1]; scoreCpu = a[2]; timeLeft = a[3];
+  const bdt = lastSnapAt ? (performance.now() - lastSnapAt) / 1000 : 0;
+  if (bdt > 0.005 && bdt < 0.5 && ball.tx != null) {
+    ball.evx = (a[4] - ball.tx) / bdt; ball.evz = (a[5] - ball.tz) / bdt;
+  } else { ball.evx = 0; ball.evz = 0; }
   ball.tx = a[4]; ball.tz = a[5]; ball.h = a[6];
   ball.owner = a[7] >= 0 ? players[a[7]] : null;
   activeOf[0] = a[8] >= 0 ? players[a[8]] : null;
@@ -937,17 +941,47 @@ function applySnapshot(a) {
   const rc = a[12];
   if (rc > 0) { restartMsg = RESTART_TEXT[rc]; restartMsgT = 1.0; }
   introT = a[13];
+
+  // Скорость, подразумеваемая разницей между снимками — по ней экстраполируем
+  // движение между приходами пакетов, иначе картинка дёргается.
+  const now = performance.now();
+  const dtSnap = lastSnapAt ? (now - lastSnapAt) / 1000 : 0;
+  lastSnapAt = now;
+  const good = dtSnap > 0.005 && dtSnap < 0.5;
+
   let k = 14;
-  for (const p of players) { p.tx = a[k++]; p.tz = a[k++]; }
+  for (const p of players) {
+    const nx = a[k++], nz = a[k++];
+    if (good && p.tx != null) { p.evx = (nx - p.tx) / dtSnap; p.evz = (nz - p.tz) / dtSnap; }
+    else { p.evx = 0; p.evz = 0; }
+    p.tx = nx; p.tz = nz;
+  }
   updateScoreHud();
 }
 
-// Гость не считает физику: он подтягивает позиции к присланным и по разнице
-// вычисляет скорость, чтобы работала анимация бега.
+// Гость не считает физику. Чужих игроков ведём к присланным позициям, между
+// снимками экстраполируя по последней известной скорости. Своего игрока
+// двигаем локально (предсказание) и лишь мягко подтягиваем к позиции хоста —
+// иначе управление ощущается с задержкой на круг «ввод → хост → снимок».
 function smoothToTargets(dt) {
-  const k = Math.min(1, 14 * dt);
+  const k = Math.min(1, 18 * dt);
+  const decay = Math.exp(-3 * dt);   // экстраполяция затухает, если пакеты пропали
+  const own = activeOf[myTeam];
+
   for (const p of players) {
     if (p.tx == null) continue;
+    p.evx = (p.evx || 0) * decay; p.evz = (p.evz || 0) * decay;
+    p.tx += p.evx * dt; p.tz += p.evz * dt;
+
+    if (p === own) {
+      // Свой игрок уже сдвинут локально — только гасим расхождение с хостом.
+      const err = hyp(p.tx - p.x, p.tz - p.z);
+      const kk = err > 140 ? 1 : Math.min(1, 3 * dt); // сильно разошлись — притянуть сразу
+      p.x += (p.tx - p.x) * kk;
+      p.z += (p.tz - p.z) * kk;
+      continue;
+    }
+
     const ox = p.x, oz = p.z;
     p.x += (p.tx - p.x) * k;
     p.z += (p.tz - p.z) * k;
@@ -956,7 +990,13 @@ function smoothToTargets(dt) {
     const sp = hyp(p.vx, p.vz);
     if (sp > 10) { p.dirx = p.vx / sp; p.dirz = p.vz / sp; p.runPhase += sp * dt * 0.06; }
   }
-  if (ball.tx != null) {
+
+  // Мяч у своего игрока — ведём локально, чтобы дриблинг не отставал.
+  if (own && ball.owner === own) {
+    glueBall();
+  } else if (ball.tx != null) {
+    ball.evx = (ball.evx || 0) * decay; ball.evz = (ball.evz || 0) * decay;
+    ball.tx += ball.evx * dt; ball.tz += ball.evz * dt;
     ball.x += (ball.tx - ball.x) * k;
     ball.z += (ball.tz - ball.z) * k;
   }
@@ -975,6 +1015,12 @@ function guestFrame(dt) {
   while (actionQueue.length) {
     const a = actionQueue.shift();
     Net.send({ t: "a", a: a === "switch" ? { type: "switch" } : a });
+  }
+  // Предсказание: свой игрок реагирует на джойстик сразу, не дожидаясь хоста.
+  const own = activeOf[myTeam];
+  if (own && state === "playing") {
+    const v = inputVector();
+    moveActor(own, v.x, v.z, sprintHeld() ? SPRINT : SPEED, dt);
   }
   // Заряд усилия ведём локально — шкала должна отзываться сразу.
   if (charge.action) {
