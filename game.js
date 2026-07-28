@@ -12,7 +12,7 @@ const PITCH_L = 2400;     // длина поля (ось x) — увеличен
 const PITCH_W = 1800;     // ширина/глубина (ось z) — увеличено вдвое
 const GOAL_HALF = 140;    // половина ширины створа ворот (по z) — прежнего размера
 const VIS_NEAR = 900;     // диапазон панорамирования камеры по длине (мировые единицы)
-const GOAL_DEPTH_H = 130; // макс. высота мяча, при которой он ещё влетает в ворота
+const GOAL_DEPTH_H = 105; // макс. высота мяча для гола (~высота перекладины); выше — мимо
 const PLR_R = 15;         // радиус игрока (мир)
 const BALL_R = 8;
 
@@ -31,16 +31,19 @@ const TACKLE_STEAL_R = 46;// радиус ручного отбора по кн�
 const STEAL_RATE = 2.2;   // вероятность отбора в секунду при контакте
 const DRIBBLE_AHEAD = 24; // насколько мяч выносится вперёд при ведении
 // Сила паса/удара зависит от заряда шкалы усилия (min при коротком тапе, max при полном).
-const PASS_MIN = 220, PASS_MAX = 500;
-const SHOT_MIN = 360, SHOT_MAX = 620;
-// Навес (пас с подъёмом): горизонтальная скорость и вертикальный подброс растут с зарядом.
-// Рассчитано под большое поле: дальность ≈ speed · (2·loft/GRAV) − потери на трении.
-const LOB_MIN_SPEED = 300, LOB_MAX_SPEED = 680;
-const LOB_MIN_LOFT = 400, LOB_MAX_LOFT = 820;
+const PASS_MIN = 300, PASS_MAX = 820;
+const SHOT_MIN = 480, SHOT_MAX = 940;
+// Подброс удара растёт с зарядом как f² — почти весь диапазон это резкий низкий удар,
+// и только у самого максимума мяч перелетает перекладину.
+const SHOT_MIN_LOFT = 20, SHOT_MAX_LOFT = 470;
+// Навес (пас с подъёмом): дальность ≈ speed · (2·loft/GRAV) − потери на трении.
+// На полном заряде долетает с одной бровки до другой (ширина поля).
+const LOB_MIN_SPEED = 360, LOB_MAX_SPEED = 1000;
+const LOB_MIN_LOFT = 320, LOB_MAX_LOFT = 760;
 const CHARGE_TIME = 0.8;  // сек до полного заряда
 const CHARGE_MIN = 0.32;  // доля силы при мгновенном тапе
-const GRAV = 900;
-const BOUNCE = 0.55;
+const GRAV = 680;         // гравитация (меньше => мяч дольше в полёте, легче)
+const BOUNCE = 0.5;
 
 const canvas = document.getElementById("pitch");
 let camX = PITCH_L / 2; // центр камеры по длине поля (едет за мячом)
@@ -98,7 +101,7 @@ function makeTeam(team) {
 makeTeam(0);
 makeTeam(1);
 
-const ball = { x: PITCH_L / 2, z: PITCH_W / 2, h: 0, vx: 0, vz: 0, vh: 0, owner: null, cooldown: 0 };
+const ball = { x: PITCH_L / 2, z: PITCH_W / 2, h: 0, vx: 0, vz: 0, vh: 0, owner: null, cooldown: 0, lastTeam: 0 };
 
 // ---- Состояние матча ----
 let state = "menu";        // menu | playing | over
@@ -106,6 +109,7 @@ let scoreYou = 0, scoreCpu = 0;
 let timeLeft = MATCH_SECONDS;
 let celebrate = 0;
 let lastGoal = null;
+let restartMsg = "", restartMsgT = 0; // подпись типа возобновления игры
 let active = null;         // активный игрок команды 0
 let F = 0;                 // счётчик кадров (для детерминированного «рандома»)
 
@@ -325,6 +329,7 @@ function anyOpponentWithin(p, r) {
 
 // Нанести удар/пас: мяч становится свободным.
 function kick(power, dx, dz, loft) {
+  if (ball.owner) ball.lastTeam = ball.owner.team; // кто последним коснулся
   ball.owner = null;
   ball.cooldown = 0.2;
   ball.vx = dx * power;
@@ -341,7 +346,7 @@ function doShoot(p, f) {
   const targetZ = PITCH_W / 2;
   const dx = goalX - p.x, dz = targetZ - p.z, d = hyp(dx, dz) || 1;
   const speed = SHOT_MIN + f * (SHOT_MAX - SHOT_MIN);
-  const loft = 90 + f * 90;
+  const loft = SHOT_MIN_LOFT + f * f * (SHOT_MAX_LOFT - SHOT_MIN_LOFT);
   kick(speed, dx / d, dz / d, loft);
 }
 
@@ -426,9 +431,9 @@ function doTackle(p) {
   p.vx += dx / d * 90; p.vz += dz / d * 90; // рывок делает отбор отзывчивым
   if (d < TACKLE_STEAL_R) {
     if (ball.owner && ball.owner.team !== p.team) {
-      ball.owner = p; ball.cooldown = 0.05; // отбор у соперника
+      ball.owner = p; ball.lastTeam = p.team; ball.cooldown = 0.05; // отбор у соперника
     } else if (!ball.owner) {
-      ball.owner = p; ball.cooldown = 0;     // перехват свободного мяча
+      ball.owner = p; ball.lastTeam = p.team; ball.cooldown = 0;     // перехват свободного мяча
     }
   }
 }
@@ -455,19 +460,73 @@ function updateFreeBall(dt) {
   const sp = hyp(ball.vx, ball.vz);
   if (sp < 4 && ball.h === 0) { ball.vx = 0; ball.vz = 0; }
 
-  // Голы + отскоки от лицевых линий
+  // Лицевые линии: гол, либо аут за линию ворот (удар от ворот / угловой)
   if (ball.x <= 0) {
     if (ball.z > MOUTH_LO && ball.z < MOUTH_HI && ball.h < GOAL_DEPTH_H) { scoreGoal("cpu"); return; }
-    ball.x = BALL_R; ball.vx = Math.abs(ball.vx) * 0.55;
+    goalLineOut(0); return;
   } else if (ball.x >= PITCH_L) {
     if (ball.z > MOUTH_LO && ball.z < MOUTH_HI && ball.h < GOAL_DEPTH_H) { scoreGoal("you"); return; }
-    ball.x = PITCH_L - BALL_R; ball.vx = -Math.abs(ball.vx) * 0.55;
+    goalLineOut(PITCH_L); return;
   }
-  // Бровки
-  if (ball.z < BALL_R) { ball.z = BALL_R; ball.vz = Math.abs(ball.vz) * 0.6; }
-  if (ball.z > PITCH_W - BALL_R) { ball.z = PITCH_W - BALL_R; ball.vz = -Math.abs(ball.vz) * 0.6; }
+  // Боковые линии: аут => вброс
+  if (ball.z <= 0 || ball.z >= PITCH_W) { throwInOut(); return; }
 
   if (ball.cooldown > 0) ball.cooldown -= dt;
+}
+
+/* =========================================================================
+   Ауты: вброс из-за боковой, удар от ворот, угловой
+   ========================================================================= */
+function nearestFieldOfTeam(team, x, z) {
+  let best = null, bd = 1e9;
+  for (const p of players) {
+    if (p.team !== team || p.isGK) continue;
+    const d = Math.hypot(p.x - x, p.z - z);
+    if (d < bd) { bd = d; best = p; }
+  }
+  return best;
+}
+
+// Поставить мяч и игрока на точку возобновления, отдать владение.
+function placeRestart(player, x, z) {
+  if (!player) return;
+  const attackDir = player.team === 0 ? 1 : -1;
+  player.x = clamp(x, PLR_R, PITCH_L - PLR_R);
+  player.z = clamp(z, PLR_R, PITCH_W - PLR_R);
+  player.vx = 0; player.vz = 0; player.dirx = attackDir; player.dirz = 0;
+  ball.x = player.x; ball.z = player.z; ball.h = 0;
+  ball.vx = 0; ball.vz = 0; ball.vh = 0;
+  ball.owner = player; ball.lastTeam = player.team; ball.cooldown = 0.35;
+  camX = camClamp(player.x);
+  camZ = clamp(player.z, PITCH_W * 0.34, PITCH_W * 0.66);
+}
+
+function throwInOut() {
+  const side = ball.z <= 0 ? 0 : PITCH_W;         // какая бровка
+  const x = clamp(ball.x, 60, PITCH_L - 60);
+  const team = ball.lastTeam === 0 ? 1 : 0;        // вбрасывает соперник
+  const p = nearestFieldOfTeam(team, x, side);
+  placeRestart(p, x, side);
+  restartMsg = "Вброс"; restartMsgT = 1.4;
+}
+
+function goalLineOut(goalX) {
+  // Ворота x=0 атакует team1 (бьёт влево); x=PITCH_L атакует team0.
+  const attackTeam = goalX === 0 ? 1 : 0;
+  const defendTeam = attackTeam === 0 ? 1 : 0;
+  if (ball.lastTeam === attackTeam) {
+    // Атакующие выбили за линию => удар от ворот защищающимся вратарём.
+    const dir = goalX === 0 ? 1 : -1;
+    const gk = players.find((p) => p.team === defendTeam && p.isGK);
+    placeRestart(gk, goalX + dir * 120, PITCH_W / 2);
+    restartMsg = "Удар от ворот"; restartMsgT = 1.4;
+  } else {
+    // Защищающиеся выбили => угловой атакующим.
+    const cz = ball.z < PITCH_W / 2 ? 30 : PITCH_W - 30;
+    const p = nearestFieldOfTeam(attackTeam, goalX, cz);
+    placeRestart(p, goalX + (goalX === 0 ? 20 : -20), cz);
+    restartMsg = "Угловой"; restartMsgT = 1.4;
+  }
 }
 
 function resolvePossession(dt) {
@@ -478,7 +537,7 @@ function resolvePossession(dt) {
       if (o.team === owner.team) continue;
       if (dist(o, owner) < TACKLE_R) {
         if (nrand(F * 1.7 + o.id * 3.1) < STEAL_RATE * dt) {
-          ball.owner = o; ball.cooldown = 0.05;
+          ball.owner = o; ball.lastTeam = o.team; ball.cooldown = 0.05;
           break;
         }
       }
@@ -491,7 +550,7 @@ function resolvePossession(dt) {
       const d = dist(p, ball);
       if (d < bd) { bd = d; best = p; }
     }
-    if (best) ball.owner = best;
+    if (best) { ball.owner = best; ball.lastTeam = best.team; }
   }
 }
 
@@ -526,10 +585,10 @@ function aiWithBall(p, dt) {
   const oppGoalX = p.team === 0 ? PITCH_L : 0;
   const attackDir = p.team === 0 ? 1 : -1;
   const distGoal = Math.abs(oppGoalX - p.x);
-  const central = Math.abs(p.z - PITCH_W / 2) < 175;
+  const central = Math.abs(p.z - PITCH_W / 2) < 340;
   const pressured = anyOpponentWithin(p, 48);
 
-  if (distGoal < 250 && central) { doShoot(p); return; }
+  if (distGoal < 520 && central) { doShoot(p, 0.7); return; }
   if (pressured && nrand(F * 0.3 + p.id) < 0.04) { doPass(p); return; }
   // Ведём к воротам, слегка смещаясь к центру
   const tz = p.z + (PITCH_W / 2 - p.z) * 0.03;
@@ -542,10 +601,10 @@ function aiControl(p, dt) {
   const ownGoalX = team === 0 ? 0 : PITCH_L;
 
   if (p.isGK) {
-    const tx = ownGoalX + attackDir * 30;
+    const tx = ownGoalX + attackDir * 40;
     const tz = clamp(ball.z, MOUTH_LO + 8, MOUTH_HI - 8);
     // выходит чуть вперёд, если мяч близко к воротам
-    const rush = Math.abs(ball.x - ownGoalX) < 170 ? attackDir * 45 : 0;
+    const rush = Math.abs(ball.x - ownGoalX) < 320 ? attackDir * 70 : 0;
     moveTo(p, tx + rush, tz, GK_SPEED, dt);
     return;
   }
@@ -631,6 +690,7 @@ function kickoffReset(kickTeam) {
   }
   ball.x = PITCH_L / 2; ball.z = PITCH_W / 2; ball.h = 0;
   ball.vx = 0; ball.vz = 0; ball.vh = 0; ball.owner = null; ball.cooldown = 0.25;
+  ball.lastTeam = kickTeam;
   // Начинающая команда получает мяч: ставим её нападающего в центр
   const fwd = players.find((p) => p.team === kickTeam && !p.isGK && p.home.x === (kickTeam === 0 ? 0.66 * PITCH_L : (1 - 0.66) * PITCH_L));
   const starter = fwd || players.find((p) => p.team === kickTeam && !p.isGK);
@@ -677,6 +737,7 @@ function frame(ts) {
 
 function step(dt) {
   if (manualHold > 0) manualHold -= dt;
+  if (restartMsgT > 0) restartMsgT -= dt;
 
   // Кого прессинговать
   const n0 = nearestFieldToBall(0), n1 = nearestFieldToBall(1);
@@ -753,6 +814,8 @@ function updateOverlays() {
     } else { bigText = "GO!"; bigCls = "go"; }
   } else if (celebrate > 0) {
     bigText = "ГОЛ!"; bigCls = "goal";
+  } else if (state === "playing" && restartMsgT > 0) {
+    subText = restartMsg;
   }
   if (el.cineBig && bigText !== _lastBig) {
     _lastBig = bigText;
