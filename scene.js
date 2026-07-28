@@ -131,7 +131,7 @@ window.Scene3D = (function () {
 
   // ---- Человечек из примитивов ----
   function cyl(r1, r2, h, color) {
-    const m = new T.Mesh(new T.CylinderGeometry(r1, r2, h, 10), mat(color));
+    const m = new T.Mesh(new T.CylinderGeometry(r1, r2, h, 6), mat(color));
     return m;
   }
   function makeLimb(len, r, color) {
@@ -152,13 +152,13 @@ window.Scene3D = (function () {
     const shoulderY = HIP + TORSO;
 
     // Тень-блоб
-    const shadow = new T.Mesh(new T.CircleGeometry(0.34, 20),
+    const shadow = new T.Mesh(new T.CircleGeometry(0.34, 14),
       new T.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28 }));
     shadow.rotation.x = -Math.PI / 2; shadow.position.y = 0.012;
     g.add(shadow);
 
     // Кольцо активного игрока
-    const ring = new T.Mesh(new T.RingGeometry(0.30, 0.40, 26),
+    const ring = new T.Mesh(new T.RingGeometry(0.30, 0.40, 20),
       new T.MeshBasicMaterial({ color: 0xffe14d, transparent: true, opacity: 0.95, side: T.DoubleSide }));
     ring.rotation.x = -Math.PI / 2; ring.position.y = 0.02; ring.visible = false;
     g.add(ring); parts.ring = ring;
@@ -170,7 +170,7 @@ window.Scene3D = (function () {
       const knee = new T.Group(); knee.position.y = -THIGH;
       const shin = cyl(0.075, 0.06, SHIN, kit.socks); shin.position.y = -SHIN / 2; knee.add(shin);
       const boot = new T.Mesh(new T.BoxGeometry(0.13, 0.08, 0.26), mat(COL.boot, 0.6));
-      boot.position.set(0, -SHIN - 0.02, 0.06); knee.add(boot);
+      boot.position.set(0, -SHIN - 0.02, 0.07); knee.add(boot);
       hip.add(knee);
       g.add(hip);
       return { hip, knee };
@@ -204,10 +204,10 @@ window.Scene3D = (function () {
 
     // Шея + голова
     const neck = cyl(0.05, 0.05, 0.08, COL.skin); neck.position.y = shoulderY + 0.12; g.add(neck);
-    const head = new T.Mesh(new T.SphereGeometry(0.16, 16, 14), mat(COL.skin, 0.7));
+    const head = new T.Mesh(new T.SphereGeometry(0.16, 12, 10), mat(COL.skin, 0.7));
     head.position.y = shoulderY + 0.3; g.add(head);
     // волосы
-    const hair = new T.Mesh(new T.SphereGeometry(0.165, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2),
+    const hair = new T.Mesh(new T.SphereGeometry(0.165, 10, 8, 0, Math.PI * 2, 0, Math.PI / 2),
       mat(0x2a1c12, 0.9));
     hair.position.y = shoulderY + 0.31; g.add(hair);
 
@@ -354,8 +354,9 @@ window.Scene3D = (function () {
     MOUTH_LO = cfg.MOUTH_LO; MOUTH_HI = cfg.MOUTH_HI;
     halfL = (L / 2) * S; halfW = (W / 2) * S;
 
-    renderer = new T.WebGLRenderer({ canvas: canvasEl, antialias: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer = new T.WebGLRenderer({ canvas: canvasEl, antialias: true, powerPreference: "high-performance" });
+    // Ограничиваем pixel ratio: на телефонах с DPR 3 это в разы меньше пикселей => выше FPS.
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
     renderer.outputEncoding = T.sRGBEncoding;
 
     scene = new T.Scene();
@@ -390,7 +391,7 @@ window.Scene3D = (function () {
       new T.MeshBasicMaterial({ color: 0, transparent: true, opacity: 0.3 }));
     ballShadow.rotation.x = -Math.PI / 2; ballShadow.position.y = 0.012;
     ballGroup.add(ballShadow); ballGroup.userData.shadow = ballShadow;
-    ballMesh = new T.Mesh(new T.SphereGeometry(0.2, 20, 16),
+    ballMesh = new T.Mesh(new T.SphereGeometry(0.2, 16, 12),
       new T.MeshStandardMaterial({ map: ballTexture(), roughness: 0.55 }));
     ballGroup.add(ballMesh);
     scene.add(ballGroup);
