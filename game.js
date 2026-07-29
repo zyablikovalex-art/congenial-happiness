@@ -71,8 +71,19 @@ const canvas = document.getElementById("pitch");
 let camX = PITCH_L / 2; // центр камеры по длине поля (едет за мячом)
 let camZ = PITCH_W / 2; // фокус камеры по ширине (мягко следует за мячом)
 
-function resize() { if (window.Scene3D) Scene3D.resize(); }
+function resize() {
+  if (window.Scene3D) Scene3D.resize();
+  fitMenuStage();
+}
 window.addEventListener("resize", resize);
+
+// Макет меню нарисован под 1280×720 — целиком вписываем его в экран.
+function fitMenuStage() {
+  const st = document.getElementById("mstage");
+  if (!st) return;
+  const s = Math.min(window.innerWidth / 1280, window.innerHeight / 720);
+  st.style.transform = "translate(-50%, -50%) scale(" + s + ")";
+}
 
 // Допустимый диапазон камеры: у ближней бровки не выходим за пределы поля.
 function camClamp(x) {
@@ -163,7 +174,13 @@ const el = {
   heightVal: document.getElementById("heightVal"),
   settingsClose: document.getElementById("settingsClose"),
   settingsReset: document.getElementById("settingsReset"),
-  netBtn: document.getElementById("netBtn"),
+  netBtn: document.getElementById("mNet"),
+  menuUI: document.getElementById("menuUI"),
+  mstage: document.getElementById("mstage"),
+  mPlay: document.getElementById("mPlay"),
+  mBack: document.getElementById("mBack"),
+  mTasks: document.getElementById("mTasks"),
+  mCards: document.getElementById("mCards"),
   netPanel: document.getElementById("netPanel"),
   netCodeInput: document.getElementById("netCodeInput"),
   netLocal: document.getElementById("netLocal"),
@@ -1076,6 +1093,7 @@ function onNetMessage(m) {
 function setStateFromNet(st) {
   state = st;
   if (st === "playing" || st === "intro") {
+    hideMenu();
     el.overlay.classList.remove("show");
     if (el.netPanel) el.netPanel.hidden = true;
     document.body.classList.toggle("playing", st === "playing");
@@ -1214,6 +1232,66 @@ canvas.addEventListener("pointerdown", () => {
 });
 
 /* =========================================================================
+   Меню: главный экран и экран заданий
+   ========================================================================= */
+const TASKS = [
+  { kicker: "тренировка", title: "Точный удар", desc: "Забей 5 мячей в верхний угол с линии штрафной.", reward: "+250 очков" },
+  { kicker: "матч",       title: "Сухой матч",  desc: "Проведи матч и не пропусти ни одного гола.",      reward: "+400 очков" },
+  { kicker: "дриблинг",   title: "Обводка",     desc: "Пройди защитника трижды за один тайм.",          reward: "+300 очков", lockBadge: "уровень 14" },
+  { kicker: "командное",  title: "Пас в разрез", desc: "Сделай 3 голевые передачи за матч.",             reward: "+500 очков", lockBadge: "уровень 16" },
+];
+const TASKS_UNLOCKED = 2;
+
+function renderTasks() {
+  if (!el.mCards) return;
+  el.mCards.innerHTML = TASKS.map((t, i) => {
+    const locked = i >= TASKS_UNLOCKED;
+    const badge = locked ? (t.lockBadge || "закрыто") : "доступно";
+    const badgeStyle = locked
+      ? "color:rgba(255,255,255,0.75);background:rgba(255,255,255,0.14)"
+      : "color:#221803;background:linear-gradient(150deg,#FFE9A8,#E0AE48)";
+    return `
+      <div class="mcard">
+        <div class="mcard-img">Картинка задания
+          ${locked ? '<div class="mcard-veil"></div>' : ""}
+          <div class="mcard-badge" style="${badgeStyle}">${badge}</div>
+        </div>
+        <div class="mcard-body" style="opacity:${locked ? 0.5 : 1}">
+          <div>
+            <div class="mcard-kicker">${t.kicker}</div>
+            <h3 class="mcard-title">${t.title}</h3>
+            <p class="mcard-desc">${t.desc}</p>
+          </div>
+          <div class="mcard-foot">
+            <div class="mcard-reward">${t.reward}</div>
+            <div class="mcard-cta" style="color:${locked ? "rgba(255,255,255,0.35)" : "#fff"}">${locked ? "Закрыто" : "Начать"}</div>
+          </div>
+        </div>
+      </div>`;
+  }).join("");
+}
+
+function showMenu() {
+  state = "menu";
+  if (el.menuUI) { el.menuUI.classList.add("show"); el.menuUI.classList.remove("tasks"); }
+  el.overlay.classList.remove("show");
+  if (el.netPanel) el.netPanel.hidden = true;
+  document.body.classList.remove("playing");
+  fitMenuStage();
+}
+function hideMenu() { if (el.menuUI) el.menuUI.classList.remove("show"); }
+
+if (el.mPlay) el.mPlay.addEventListener("click", () => el.menuUI.classList.add("tasks"));
+if (el.mBack) el.mBack.addEventListener("click", (e) => {
+  e.stopPropagation();                       // чтобы не сработал старт матча
+  el.menuUI.classList.remove("tasks");
+});
+// Пока любое место на экране заданий начинает матч.
+if (el.mTasks) el.mTasks.addEventListener("click", () => { hideMenu(); startMatch(); });
+
+renderTasks();
+
+/* =========================================================================
    Потоки: меню / матч / итог
    ========================================================================= */
 function startMatch() {
@@ -1227,6 +1305,7 @@ function startMatch() {
   ensureAudio();
   introT = 0; introWhistled = false;
   state = "intro";
+  hideMenu();
   el.overlay.classList.remove("show");
   if (el.netPanel) el.netPanel.hidden = true;
   document.body.classList.remove("playing"); // геймпад скрыт во время заставки
@@ -1249,15 +1328,14 @@ function showResult() {
   else if (mine < theirs) title = "Поражение 😔";
   else title = "Ничья 🤝";
   el.overlayText.innerHTML =
-    `<b style="font-size:20px">${title}</b><br />Счёт ${mine} : ${theirs}<br /><br />Ещё разок?`;
-  el.startBtn.textContent = netMode === "guest" ? "В меню" : "Играть снова";
+    `<b style="font-size:20px">${title}</b><br />Счёт ${mine} : ${theirs}`;
+  el.startBtn.textContent = "В меню";
   el.overlay.classList.add("show");
 }
 
 el.startBtn.addEventListener("click", () => {
-  // Гость не запускает матч сам — только хост. Гостю кнопка возвращает в меню.
   if (netMode === "guest") { leaveNet(); return; }
-  startMatch();
+  showMenu();
 });
 
 /* =========================================================================
@@ -1350,11 +1428,7 @@ function onNetClose() {
 function leaveNet() {
   Net.close();
   setMode("ai", 0);
-  state = "menu";
-  document.body.classList.remove("playing");
-  if (el.netPanel) el.netPanel.hidden = true;
-  el.startBtn.textContent = "Играть с ИИ";
-  el.overlay.classList.add("show");
+  showMenu();
 }
 
 if (el.netBtn) el.netBtn.addEventListener("click", openNetPanel);
@@ -1367,10 +1441,9 @@ if (el.netCopy) el.netCopy.addEventListener("click", () => {
   else netSay(link);
 });
 
-// На чужих площадках сетевой игры нет: прячем кнопку и правим текст меню.
+// На чужих площадках сетевой игры нет — прячем кнопку.
 if (!multiplayerAllowed()) {
   if (el.netBtn) el.netBtn.hidden = true;
-  el.startBtn.textContent = "Играть";
 } else if (new URL(location.href).searchParams.get("room")) {
   // Пришли по ссылке с кодом — сразу открываем лобби.
   setTimeout(openNetPanel, 100);

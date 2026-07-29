@@ -49,19 +49,61 @@
     </div>
   </div>
 
-  <div id="overlay" class="show">
+  <!-- ===== Новое меню: экран 1 (главный) и экран 2 (задания) ===== -->
+  <div id="menuUI" class="show">
+    <div class="mstage" id="mstage">
+
+      <!-- Экран 1 -->
+      <div class="mscreen mmenu" id="mMenu">
+        <div class="mbg"></div>
+        <div class="mvignette"></div>
+        <img class="mtrophy" src="./assets/trophy.webp" alt="" />
+        <div class="mleft">
+          <div></div>
+          <div class="mhero">
+            <h1 class="mtitle">Поле<br />чудес<span class="gold">.</span></h1>
+            <p class="msub">Тренируйся, выполняй задания недели и веди свою команду к кубку.</p>
+            <div class="mactions">
+              <button class="mbtn-gold" id="mPlay">Играть</button>
+              <button class="mbtn-ghost" id="mNet">По сети</button>
+            </div>
+          </div>
+          <div></div>
+        </div>
+      </div>
+
+      <!-- Экран 2 -->
+      <div class="mscreen mtasks" id="mTasks">
+        <div class="mtasks-bg"></div>
+        <div class="mtasks-body">
+          <div class="mtasks-head">
+            <div class="mtasks-headleft">
+              <button class="mback" id="mBack" aria-label="Назад">←</button>
+              <div>
+                <div class="mkicker gold">неделя 4</div>
+                <h2 class="mh2">Задания</h2>
+              </div>
+            </div>
+            <div class="mprogress">
+              <div class="mprogress-text">Открыто 2 из 4</div>
+              <div class="mprogress-bar"><i style="width:50%"></i></div>
+            </div>
+          </div>
+          <div class="mcards" id="mCards"></div>
+          <div class="mhint">Скролл вправо — ещё задания →</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Итог матча -->
+  <div id="overlay">
     <div class="card">
-      <h1>Футбол 11 на 11 ⚽</h1>
-      <p id="overlayText">
-        Забей больше голов за 2:00. Играешь <b>ближайшим к мячу</b> — он подсвечен.<br />
-        <b>Держи ПАС / УДАР / НАВЕС</b> — чем дольше, тем сильнее.
-        <b>ПАС</b> без мяча — отбор, <b>⇄</b> — смена игрока.<br />
-        <b>ПК:</b> стрелки, <b>S</b> — пас, <b>D</b> — удар, <b>A</b> — навес,
-        <b>Пробел</b> — смена, <b>Shift</b> — спринт.
-      </p>
+      <h1>Матч окончен</h1>
+      <p id="overlayText"></p>
       <div class="menu-actions">
-        <button id="startBtn">Играть с ИИ</button>
-        <button id="netBtn" class="btn-ghost">Игра по сети</button>
+        <button id="startBtn">В меню</button>
       </div>
       <p class="hint" id="installHint" hidden>Совет: «Добавить на экран Домой», чтобы играть как приложение.</p>
     </div>

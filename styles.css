@@ -191,6 +191,219 @@ html, body {
   background: #74a9dc;
 }
 
+/* =========================================================================
+   Меню: главный экран и экран заданий.
+   Макет нарисован под 1280×720 и целиком масштабируется под экран (см. mstage
+   в game.js), поэтому размеры внутри заданы в пикселях исходного макета.
+   ========================================================================= */
+@font-face {
+  font-family: "Onest"; font-style: normal; font-weight: 400 800; font-display: swap;
+  src: url("./assets/fonts/onest-cyr.woff2") format("woff2");
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: "Onest"; font-style: normal; font-weight: 400 800; font-display: swap;
+  src: url("./assets/fonts/onest-lat.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+2000-206F, U+2190-2193, U+2212;
+}
+@font-face {
+  font-family: "Unbounded"; font-style: normal; font-weight: 600 800; font-display: swap;
+  src: url("./assets/fonts/unbounded-cyr.woff2") format("woff2");
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: "Unbounded"; font-style: normal; font-weight: 600 800; font-display: swap;
+  src: url("./assets/fonts/unbounded-lat.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+2000-206F, U+2190-2193, U+2212;
+}
+
+#menuUI {
+  position: fixed;
+  inset: 0;
+  display: none;
+  z-index: 12;
+  overflow: hidden;
+  background: #070c09 url("./assets/menu-bg.jpg") center / cover no-repeat;
+  font-family: Onest, system-ui, sans-serif;
+  color: #fff;
+}
+#menuUI.show { display: block; }
+#menuUI::after {           /* затемнение по краям, чтобы поля вокруг макета не спорили */
+  content: "";
+  position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(120% 100% at 50% 50%, rgba(10,12,14,0.25) 0%, rgba(8,10,12,0.85) 100%);
+}
+
+.mstage {
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 1280px; height: 720px;
+  transform: translate(-50%, -50%);   /* масштаб дописывает JS */
+  transform-origin: center center;
+  overflow: hidden;
+  z-index: 1;
+}
+
+.mscreen {
+  position: absolute; inset: 0;
+  transition: transform 420ms cubic-bezier(.65, 0, .35, 1);
+}
+.mmenu  { transform: translateX(0); }
+.mtasks { transform: translateX(100%); background: #1b1e21; }
+#menuUI.tasks .mmenu  { transform: translateX(-14%); }
+#menuUI.tasks .mtasks { transform: translateX(0); }
+
+/* ---- Экран 1 ---- */
+.mbg {
+  position: absolute; inset: 0;
+  background: #23272b url("./assets/menu-bg.jpg") center / cover no-repeat;
+}
+.mvignette {
+  position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(120% 100% at 80% 60%, rgba(52,56,61,0.35) 0%, rgba(30,33,37,0.6) 55%, rgba(25,28,31,0.85) 100%);
+}
+.mtrophy {
+  position: absolute; top: 122px; left: 768px; height: 488px;
+  filter: saturate(1.2) drop-shadow(0 24px 60px rgba(0,0,0,0.55));
+  pointer-events: none;
+}
+.mleft {
+  position: absolute; top: 0; left: 0; bottom: 0; width: 620px;
+  padding: 64px 0 56px 76px;
+  display: flex; flex-direction: column; justify-content: space-between;
+  box-sizing: border-box;
+}
+.mhero { display: flex; flex-direction: column; gap: 26px; }
+.mtitle {
+  margin: 0;
+  font-family: Unbounded, sans-serif; font-size: 74px; font-weight: 800;
+  line-height: 0.94; letter-spacing: -0.02em; text-transform: uppercase;
+}
+.gold { color: #E9BE5C; }
+.msub {
+  margin: 0; max-width: 420px;
+  font-size: 17px; line-height: 1.5; color: rgba(255,255,255,0.66);
+}
+.mactions { display: flex; align-items: center; gap: 18px; margin-top: 8px; }
+
+.mbtn-gold {
+  border: none; cursor: pointer;
+  font-family: Unbounded, sans-serif; font-size: 22px; font-weight: 800;
+  letter-spacing: 0.02em; text-transform: uppercase; color: #241a04;
+  background: linear-gradient(150deg, #FFE9A8 0%, #F0C862 34%, #D8A03A 68%, #B87C22 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.6), inset 0 -2px 0 rgba(120,74,10,0.35);
+  padding: 20px 54px; border-radius: 14px;
+  animation: pulseGlow 2.6s ease-out infinite;
+  transition: transform 140ms ease, filter 140ms ease;
+}
+.mbtn-gold:hover { filter: brightness(1.08); transform: translateY(-2px); }
+.mbtn-gold:active { transform: translateY(1px); }
+
+.mbtn-ghost {
+  cursor: pointer;
+  font-family: Unbounded, sans-serif; font-size: 15px; font-weight: 700;
+  letter-spacing: 0.04em; text-transform: uppercase; color: rgba(255,255,255,0.8);
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.18);
+  padding: 18px 26px; border-radius: 14px;
+  transition: background 140ms ease;
+}
+.mbtn-ghost:hover { background: rgba(255,255,255,0.16); }
+.mbtn-ghost[hidden] { display: none; }
+
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(233,190,92,0.5); }
+  50% { box-shadow: 0 0 0 18px rgba(233,190,92,0); }
+}
+
+/* ---- Экран 2 ---- */
+.mtasks-bg {
+  position: absolute; inset: 0;
+  background: linear-gradient(180deg, rgba(27,30,33,0.9), rgba(27,30,33,0.97));
+}
+.mtasks-body {
+  position: relative; height: 100%;
+  display: flex; flex-direction: column;
+  padding: 44px 0 40px; box-sizing: border-box;
+}
+.mtasks-head {
+  display: flex; align-items: flex-end; justify-content: space-between; padding: 0 76px;
+}
+.mtasks-headleft { display: flex; align-items: center; gap: 22px; }
+.mback {
+  cursor: pointer; width: 46px; height: 46px; border-radius: 12px;
+  background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.14);
+  color: #fff; font-size: 20px; line-height: 1; transition: background 140ms ease;
+}
+.mback:hover { background: rgba(255,255,255,0.16); }
+.mkicker {
+  font-size: 11px; font-weight: 800; letter-spacing: 0.22em;
+  text-transform: uppercase; margin-bottom: 8px;
+}
+.mh2 {
+  margin: 0; font-family: Unbounded, sans-serif; font-size: 38px; font-weight: 800;
+  line-height: 1; letter-spacing: -0.01em; text-transform: uppercase;
+}
+.mprogress { display: flex; align-items: center; gap: 16px; }
+.mprogress-text { font-size: 13px; font-weight: 700; color: rgba(255,255,255,0.55); }
+.mprogress-bar {
+  width: 180px; height: 8px; border-radius: 99px;
+  background: rgba(255,255,255,0.1); overflow: hidden;
+}
+.mprogress-bar i {
+  display: block; height: 100%;
+  background: linear-gradient(90deg, #B87C22, #F0C862, #FFE9A8);
+}
+
+.mcards {
+  flex: 1; display: flex; align-items: center;
+  overflow-x: auto; overflow-y: hidden;
+  padding: 0 76px; gap: 26px;
+  scroll-snap-type: x mandatory;
+}
+.mcard {
+  flex: 0 0 330px; scroll-snap-align: center; height: 414px;
+  border-radius: 20px; overflow: hidden;
+  background: linear-gradient(180deg, #2d3236 0%, #22262a 60%, #1d2124 100%);
+  border: 1px solid rgba(255,255,255,0.09);
+  display: flex; flex-direction: column;
+  transition: transform 160ms ease, border-color 160ms ease;
+}
+.mcard:hover { transform: translateY(-4px); border-color: rgba(233,190,92,0.45); }
+.mcard-img {
+  position: relative; height: 206px; flex: 0 0 206px;
+  background: linear-gradient(160deg, #34393e, #23272b);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; color: rgba(255,255,255,0.25);
+}
+.mcard-veil { position: absolute; inset: 0; pointer-events: none; background: rgba(20,23,26,0.72); }
+.mcard-badge {
+  position: absolute; top: 14px; left: 14px; pointer-events: none;
+  padding: 6px 12px; border-radius: 8px;
+  font-size: 10px; font-weight: 800; letter-spacing: 0.16em; text-transform: uppercase;
+}
+.mcard-body {
+  flex: 1; padding: 22px 22px 24px;
+  display: flex; flex-direction: column; justify-content: space-between;
+}
+.mcard-kicker {
+  font-size: 11px; font-weight: 800; letter-spacing: 0.16em; text-transform: uppercase;
+  color: rgba(255,255,255,0.4); margin-bottom: 10px;
+}
+.mcard-title {
+  margin: 0 0 10px; font-family: Unbounded, sans-serif; font-size: 20px; font-weight: 700;
+  line-height: 1.15; letter-spacing: -0.01em; text-transform: uppercase;
+}
+.mcard-desc { margin: 0; font-size: 14px; line-height: 1.45; color: rgba(255,255,255,0.6); }
+.mcard-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 16px; }
+.mcard-reward { font-family: Unbounded, sans-serif; font-weight: 700; font-size: 14px; color: #E9BE5C; }
+.mcard-cta { font-size: 12px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
+.mhint {
+  padding: 0 76px; display: flex; align-items: center; gap: 12px;
+  font-size: 12px; font-weight: 700; letter-spacing: 0.14em;
+  text-transform: uppercase; color: rgba(255,255,255,0.35);
+}
+
 /* ---------- Кинематографичные оверлеи (поверх 3D) ---------- */
 #flash {
   position: absolute;
