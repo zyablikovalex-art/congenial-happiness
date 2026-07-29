@@ -419,6 +419,7 @@ button#startBtn:active { transform: scale(0.96); }
   justify-content: center;
   flex-wrap: wrap;
 }
+.menu-actions button[hidden] { display: none; }
 .menu-actions .btn-ghost {
   appearance: none;
   background: transparent;

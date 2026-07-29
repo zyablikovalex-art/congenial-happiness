@@ -45,6 +45,28 @@ const CHARGE_MIN = 0.32;  // доля силы при мгновенном та�
 const GRAV = 680;         // гравитация (меньше => мяч дольше в полёте, легче)
 const BOUNCE = 0.5;
 
+/* =========================================================================
+   Где разрешён мультиплеер.
+   Сетевая игра ходит к внешнему брокеру PeerJS, а игровые площадки
+   (Яндекс Игры, VK Play) режут внешние запросы своей политикой CSP. Поэтому
+   на «своих» доменах мультиплеер есть, на чужих — только матч с ИИ.
+   Чтобы включить его ещё где-то, достаточно дописать хост сюда.
+   Для проверки: ?mp=1 включает принудительно, ?mp=0 выключает.
+   ========================================================================= */
+const MP_HOSTS = [
+  "zyablikovalex-art.github.io",  // боевой адрес
+  "localhost", "127.0.0.1",       // локальная разработка
+];
+
+function multiplayerAllowed() {
+  try {
+    const force = new URL(location.href).searchParams.get("mp");
+    if (force === "1") return true;
+    if (force === "0") return false;
+    return MP_HOSTS.indexOf(location.hostname) !== -1;
+  } catch (_) { return false; }
+}
+
 const canvas = document.getElementById("pitch");
 let camX = PITCH_L / 2; // центр камеры по длине поля (едет за мячом)
 let camZ = PITCH_W / 2; // фокус камеры по ширине (мягко следует за мячом)
@@ -1267,7 +1289,7 @@ function netErrorText(code) {
 }
 
 function openNetPanel() {
-  if (!el.netPanel) return;
+  if (!el.netPanel || !multiplayerAllowed()) return;
   const url = new URL(location.href);
   const fromUrl = (url.searchParams.get("room") || "").toUpperCase();
   el.netCodeInput.value = fromUrl || Net.makeCode();
@@ -1345,8 +1367,12 @@ if (el.netCopy) el.netCopy.addEventListener("click", () => {
   else netSay(link);
 });
 
-// Пришли по ссылке с кодом — сразу открываем лобби.
-if (new URL(location.href).searchParams.get("room")) {
+// На чужих площадках сетевой игры нет: прячем кнопку и правим текст меню.
+if (!multiplayerAllowed()) {
+  if (el.netBtn) el.netBtn.hidden = true;
+  el.startBtn.textContent = "Играть";
+} else if (new URL(location.href).searchParams.get("room")) {
+  // Пришли по ссылке с кодом — сразу открываем лобби.
   setTimeout(openNetPanel, 100);
 }
 
