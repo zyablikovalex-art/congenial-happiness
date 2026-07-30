@@ -79,7 +79,7 @@ window.Scene3D = (function () {
     const lz = (w) => (w / W) * (TH - 2 * My);   // длина по z в пикселях текстуры
     // Толщина линий и точки задаются в мировых единицах: иначе при изменении
     // размера поля разметка становилась бы толще или тоньше относительно игроков.
-    const LINE_W = 10, SPOT_R = 13;
+    const LINE_W = 12, SPOT_R = 10, CIRCLE_R = 424;   // круг — «9.15 м»
 
     // Полосатый газон (вертикальные полосы вдоль длины)
     const stripes = 14;
@@ -96,12 +96,14 @@ window.Scene3D = (function () {
     g.beginPath(); g.moveTo(px(L / 2), py(0)); g.lineTo(px(L / 2), py(W)); g.stroke();
     // Центральный круг + точка
     g.beginPath();
-    g.ellipse(px(L / 2), py(W / 2), lx(190), lz(190), 0, 0, Math.PI * 2);
+    g.ellipse(px(L / 2), py(W / 2), lx(CIRCLE_R), lz(CIRCLE_R), 0, 0, Math.PI * 2);
     g.stroke();
     g.fillStyle = "#fff";
     g.beginPath(); g.arc(px(L / 2), py(W / 2), lx(SPOT_R), 0, Math.PI * 2); g.fill();
     // Штрафные + вратарские + точки пенальти
-    const boxD = 300, boxHalf = 430, gaD = 110, gaHalf = 240, penX = 220;
+    // Разметка в тех же «2.16 см на единицу», что и поле: штрафная 16.5 x 40.32 м,
+    // вратарская 5.5 x 18.32 м, точка пенальти 11 м, центральный круг 9.15 м.
+    const boxD = 764, boxHalf = 933, gaD = 255, gaHalf = 424, penX = 509;
     [0, 1].forEach((side) => {
       const s = side === 0 ? 1 : -1;
       const gx = side === 0 ? 0 : L;
