@@ -233,6 +233,21 @@ html, body {
 .prow input[type="range"]::-webkit-slider-thumb { width: 18px; height: 18px; margin-top: -5px; }
 .prow input[type="range"]::-moz-range-thumb { width: 18px; height: 18px; }
 .phys-note { margin-top: 12px; }
+.train-check { margin-bottom: 14px; }
+.train-check input:disabled + span { opacity: 0.45; }
+
+/* Напоминание в HUD: тренировочный режим живёт и после закрытия панели */
+#trainBadge {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 4px 9px;
+  border-radius: 999px;
+  color: #06371c;
+  background: #ffe14d;
+}
+#trainBadge[hidden] { display: none; }
 
 /* Живой расчёт под группой ползунков */
 .phys-live {

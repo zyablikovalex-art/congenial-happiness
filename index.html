@@ -18,6 +18,7 @@
       <span class="team cpu" id="teamCpu">ИИ</span>
     </div>
     <div class="hud-right">
+      <span id="trainBadge" hidden>соперники стоят</span>
       <div id="clock">02:00</div>
     </div>
   </header>
@@ -179,6 +180,10 @@
       </div>
 
       <div class="spane" id="panePhys" hidden>
+        <label class="net-check train-check">
+          <input type="checkbox" id="freezeOpp" />
+          <span>Остановить соперников</span>
+        </label>
         <div id="physList"></div>
         <p class="setting-hint phys-note">Матч продолжается, обеими командами играет ИИ — двигай ползунок и смотри со стороны. Управление вернётся, когда закроешь панель.<br />Подобрал — жми «Экспорт»: в буфер ляжет готовый <b>physics.js</b>, заменишь файл в репозитории — и значения станут общими для всех запусков.</p>
       </div>

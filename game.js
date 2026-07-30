@@ -190,6 +190,8 @@ const el = {
   mTasks: document.getElementById("mTasks"),
   mCards: document.getElementById("mCards"),
   mLen: document.getElementById("mLen"),
+  freezeOpp: document.getElementById("freezeOpp"),
+  trainBadge: document.getElementById("trainBadge"),
   netLenRow: document.getElementById("netLenRow"),
   netPanel: document.getElementById("netPanel"),
   netCodeInput: document.getElementById("netCodeInput"),
@@ -213,6 +215,11 @@ let paused = false;
 // Демо-режим: пока открыта панель физики, играют оба ИИ (только в матче с ИИ —
 // в сетевой игре командой соперника управляет живой человек).
 let autoPlay = false;
+// Тренировочный режим: команда соперника стоит на месте и не отбирает мяч.
+// Только в матче с ИИ — в сетевой игре той командой играет живой человек.
+let freezeOpp = false;
+
+function isFrozen(p) { return freezeOpp && netMode === "ai" && p.team !== myTeam; }
 
 function applyCamSettings(s, save) {
   Scene3D.setCamera(s);
@@ -417,6 +424,22 @@ function physAsCode() {
     "   ========================================================================= */\n" +
     "window.PHYSICS = {\n" + body + "\n};\n";
 }
+
+/* ---- Тренировочный режим ---- */
+function applyFreezeOpp(on, save) {
+  freezeOpp = !!on;
+  if (el.freezeOpp) {
+    el.freezeOpp.checked = freezeOpp;
+    // В сетевой игре той командой играет человек — замораживать нечего.
+    el.freezeOpp.disabled = netMode !== "ai";
+  }
+  // Режим переживает закрытие панели, поэтому о нём напоминает плашка в HUD.
+  if (el.trainBadge) el.trainBadge.hidden = !(freezeOpp && netMode === "ai");
+  if (save) { try { localStorage.setItem("freezeOpp", freezeOpp ? "1" : "0"); } catch (_) {} }
+}
+
+if (el.freezeOpp) el.freezeOpp.addEventListener("change", () => applyFreezeOpp(el.freezeOpp.checked, true));
+try { applyFreezeOpp(localStorage.getItem("freezeOpp") === "1", false); } catch (_) { applyFreezeOpp(false, false); }
 
 /* ---- Вкладки панели ---- */
 let settingsTab = "cam";
@@ -884,7 +907,7 @@ function resolvePossession(dt) {
     // Попытки отбора соперниками
     const owner = ball.owner;
     for (const o of players) {
-      if (o.team === owner.team) continue;
+      if (o.team === owner.team || isFrozen(o)) continue;
       if (dist(o, owner) < TACKLE_R) {
         if (nrand(F * 1.7 + o.id * 3.1) < STEAL_RATE * dt) {
           ball.owner = o; ball.lastTeam = o.team; ball.cooldown = 0.05;
@@ -897,6 +920,7 @@ function resolvePossession(dt) {
     // (высоко летящий навес не «ловится» из-под ног).
     let best = null, bd = CTRL_R;
     for (const p of players) {
+      if (isFrozen(p)) continue;   // замороженные не подбирают мяч
       const d = dist(p, ball);
       if (d < bd) { bd = d; best = p; }
     }
@@ -1154,6 +1178,7 @@ function step(dt) {
 
   // Ход всех игроков
   for (const p of players) {
+    if (isFrozen(p)) { p.vx = 0; p.vz = 0; continue; }
     if (p === activeOf[0] && isHumanTeam(0)) userMove(p, dt);
     else if (p === activeOf[1] && isHumanTeam(1)) userMove(p, dt);
     else if (ball.owner === p) aiWithBall(p, dt);
@@ -1653,6 +1678,7 @@ function setMode(mode, team) {
   updateScoreHud();
   const label = document.getElementById("teamCpu");
   if (label) label.textContent = mode === "ai" ? "ИИ" : "СОПЕРНИК";
+  applyFreezeOpp(freezeOpp, false);   // в сетевой игре режим недоступен
 }
 
 function netSay(text) { if (el.netStatus) el.netStatus.textContent = text; }
