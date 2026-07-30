@@ -199,6 +199,9 @@ const el = {
    ========================================================================= */
 const CAM_DEFAULTS = { angle: 40, height: 10 };
 let paused = false;
+// Демо-режим: пока открыта панель физики, играют оба ИИ (только в матче с ИИ —
+// в сетевой игре командой соперника управляет живой человек).
+let autoPlay = false;
 
 function applyCamSettings(s, save) {
   Scene3D.setCamera(s);
@@ -347,6 +350,8 @@ function setSettingsTab(tab) {
   const live = tab === "phys";
   el.settings.classList.toggle("live", live);
   paused = !live && state === "playing";
+  // На вкладке физики отдаём обе команды ИИ — смотрим игру со стороны.
+  autoPlay = live && netMode === "ai";
 }
 
 document.querySelectorAll(".stab").forEach((b) =>
@@ -374,6 +379,7 @@ function closeSettings() {
   el.settings.hidden = true;
   el.settings.classList.remove("live");
   paused = false;
+  autoPlay = false;   // управление возвращается игроку
 }
 
 if (el.settingsBtn) el.settingsBtn.addEventListener("click", openSettings);
@@ -878,7 +884,10 @@ function aiControl(p, dt) {
 const manualHoldOf = [0, 0]; // сек, в течение которых уважаем ручной выбор
 
 // Команда управляется человеком? В режиме с ИИ — только наша.
+// В демо-режиме (открыта панель физики) обе команды ведёт ИИ, чтобы можно
+// было наблюдать за игрой, а не играть.
 function isHumanTeam(team) {
+  if (autoPlay) return false;
   return netMode === "ai" ? team === myTeam : true;
 }
 
@@ -1029,15 +1038,16 @@ function step(dt) {
   // Накопление заряда усилия, пока держим ПАС/УДАР.
   if (charge.action) {
     // Если по какой-то причине потеряли мяч во время заряда — отменяем.
-    if (!active || ball.owner !== active) resetCharge();
+    if (autoPlay || !active || ball.owner !== active) resetCharge();
     else {
       charge.t = Math.min(CHARGE_TIME, charge.t + dt);
       showPowerBar(charge.action, charge.t / CHARGE_TIME);
     }
   }
 
-  // Мои действия
-  while (actionQueue.length) applyAction(actionQueue.shift(), myTeam);
+  // Мои действия (в демо-режиме игрок не вмешивается)
+  if (autoPlay) actionQueue.length = 0;
+  else while (actionQueue.length) applyAction(actionQueue.shift(), myTeam);
   // Действия соперника, пришедшие по сети (только у хоста)
   if (netMode === "host") {
     while (remote.queue.length) applyAction(remote.queue.shift(), 1 - myTeam);
