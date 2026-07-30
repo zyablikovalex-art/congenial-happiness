@@ -65,7 +65,7 @@ window.Scene3D = (function () {
 
   // ---- Текстура газона (вид сверху) ----
   function pitchTexture() {
-    const TW = 2048, TH = 1600;
+    const TW = 2560, TH = 2048;   // пропорция близка к газону с раннофом
     // Марджины пропорциональны RUNOFF, чтобы разметка ложилась ровно на
     // логические границы поля (0..L, 0..W), а за ними оставался газон.
     const Mx = TW * RUNOFF / (L + 2 * RUNOFF);
@@ -77,6 +77,9 @@ window.Scene3D = (function () {
     const py = (wz) => My + (wz / W) * (TH - 2 * My);
     const lx = (w) => (w / L) * (TW - 2 * Mx);   // длина по x в пикселях текстуры
     const lz = (w) => (w / W) * (TH - 2 * My);   // длина по z в пикселях текстуры
+    // Толщина линий и точки задаются в мировых единицах: иначе при изменении
+    // размера поля разметка становилась бы толще или тоньше относительно игроков.
+    const LINE_W = 10, SPOT_R = 13;
 
     // Полосатый газон (вертикальные полосы вдоль длины)
     const stripes = 14;
@@ -86,7 +89,7 @@ window.Scene3D = (function () {
     }
     // Тёмная окантовка (за линиями — газон-раннофф уже нарисован полосами)
     g.strokeStyle = "rgba(255,255,255,0.92)";
-    g.lineWidth = 6;
+    g.lineWidth = Math.max(2, lx(LINE_W));
     // Границы
     g.strokeRect(px(0), py(0), px(L) - px(0), py(W) - py(0));
     // Средняя линия
@@ -96,7 +99,7 @@ window.Scene3D = (function () {
     g.ellipse(px(L / 2), py(W / 2), lx(190), lz(190), 0, 0, Math.PI * 2);
     g.stroke();
     g.fillStyle = "#fff";
-    g.beginPath(); g.arc(px(L / 2), py(W / 2), 8, 0, Math.PI * 2); g.fill();
+    g.beginPath(); g.arc(px(L / 2), py(W / 2), lx(SPOT_R), 0, Math.PI * 2); g.fill();
     // Штрафные + вратарские + точки пенальти
     const boxD = 300, boxHalf = 430, gaD = 110, gaHalf = 240, penX = 220;
     [0, 1].forEach((side) => {
@@ -105,7 +108,7 @@ window.Scene3D = (function () {
       g.strokeRect(px(gx), py(W / 2 - boxHalf), s * (px(boxD) - px(0)), py(W / 2 + boxHalf) - py(W / 2 - boxHalf));
       g.strokeRect(px(gx), py(W / 2 - gaHalf), s * (px(gaD) - px(0)), py(W / 2 + gaHalf) - py(W / 2 - gaHalf));
       g.fillStyle = "#fff";
-      g.beginPath(); g.arc(px(side === 0 ? penX : L - penX), py(W / 2), 7, 0, Math.PI * 2); g.fill();
+      g.beginPath(); g.arc(px(side === 0 ? penX : L - penX), py(W / 2), lx(SPOT_R * 0.85), 0, Math.PI * 2); g.fill();
     });
 
     const tex = new T.CanvasTexture(c);
