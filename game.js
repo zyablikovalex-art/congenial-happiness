@@ -1517,6 +1517,14 @@ matchLenInputs.forEach((inp) => {
 });
 if (el.mLen) ["click", "pointerdown", "touchstart"].forEach((ev) =>
   el.mLen.addEventListener(ev, (e) => e.stopPropagation()));
+
+// Кнопки ± — на телефоне так быстрее, чем вызывать клавиатуру.
+document.querySelectorAll(".mlen-step").forEach((b) =>
+  b.addEventListener("click", (e) => {
+    e.stopPropagation();
+    setMatchMinutes(matchMinutes + parseFloat(b.dataset.d), true);
+  }));
+
 loadMatchMinutes();
 
 function showMenu() {

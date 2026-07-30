@@ -367,6 +367,39 @@ html, body {
 }
 .mactions { display: flex; align-items: center; gap: 18px; margin-top: 8px; }
 
+/* Длительность матча — прямо под кнопкой «Играть», чтобы не искать */
+.mlen-row { display: flex; flex-direction: column; gap: 10px; }
+.mlen-label {
+  font-size: 12px; font-weight: 800; letter-spacing: 0.2em;
+  text-transform: uppercase; color: rgba(255, 255, 255, 0.5);
+}
+.mlen-ctl { display: flex; align-items: center; gap: 10px; }
+.mlen-ctl input {
+  width: 106px; padding: 13px 10px; text-align: center;
+  font-family: inherit; font-size: 24px; font-weight: 800; color: #ffe9a8;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 12px; outline: none;
+  -moz-appearance: textfield;
+}
+.mlen-ctl input::-webkit-outer-spin-button,
+.mlen-ctl input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.mlen-ctl input:focus { border-color: rgba(240, 200, 98, 0.75); }
+.mlen-unit {
+  font-size: 12px; font-weight: 800; letter-spacing: 0.18em;
+  text-transform: uppercase; color: rgba(255, 255, 255, 0.5);
+}
+.mlen-step {
+  cursor: pointer; width: 52px; height: 52px; flex: 0 0 auto;
+  border-radius: 14px; font-family: inherit; font-size: 26px; font-weight: 700;
+  line-height: 1; color: #fff;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  transition: background 140ms ease;
+}
+.mlen-step:hover { background: rgba(255, 255, 255, 0.16); }
+.mlen-step:active { transform: scale(0.94); }
+
 .mbtn-gold {
   border: none; cursor: pointer;
   font-family: Unbounded, sans-serif; font-size: 22px; font-weight: 800;

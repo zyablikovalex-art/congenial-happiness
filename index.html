@@ -69,6 +69,15 @@
               <button class="mbtn-gold" id="mPlay">Играть</button>
               <button class="mbtn-ghost" id="mNet">По сети</button>
             </div>
+            <div class="mlen-row">
+              <span class="mlen-label">Длительность матча</span>
+              <div class="mlen-ctl">
+                <button class="mlen-step" data-d="-0.5" aria-label="Короче">−</button>
+                <input class="matchmin" type="number" min="0.5" max="60" step="0.5" inputmode="decimal" aria-label="Длительность матча в минутах" />
+                <span class="mlen-unit">мин</span>
+                <button class="mlen-step" data-d="0.5" aria-label="Длиннее">+</button>
+              </div>
+            </div>
           </div>
           <div></div>
         </div>
