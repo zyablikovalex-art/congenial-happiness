@@ -21,31 +21,34 @@ const MOUTH_HI = PITCH_W / 2 + GOAL_HALF;
 
 // ---- Тюнинг ----
 const MATCH_SECONDS = 120;
-let SPEED = 106;        // базовая скорость бега (мир/сек) — игроки бегают медленно
-let SPRINT = 150;       // скорость со спринтом
-let GK_SPEED = 94;
-let ACCEL = 1700;       // ускорение большое => резкий отклик (реакция), бег остаётся медленным
-let CTRL_R = 27;        // радиус получения контроля над мячом
-let TACKLE_R = 28;      // радиус отбора (ИИ, автоматический)
-let TACKLE_STEAL_R = 46;// радиус ручного отбора по кнопке «Пас»
-let STEAL_RATE = 2.2;   // вероятность отбора в секунду при контакте
-let DRIBBLE_AHEAD = 24; // насколько мяч выносится вперёд при ведении
-// Сила паса/удара зависит от заряда шкалы усилия (min при коротком тапе, max при полном).
-let PASS_MIN = 300, PASS_MAX = 820;
-let SHOT_MIN = 480, SHOT_MAX = 940;
-// Подброс удара растёт с зарядом как f² — почти весь диапазон это резкий низкий удар,
-// и только у самого максимума мяч перелетает перекладину.
-let SHOT_MIN_LOFT = 20, SHOT_MAX_LOFT = 470;
-// Навес (пас с подъёмом): дальность ≈ speed · (2·loft/GRAV) − потери на трении.
-// При выбранном партнёре скорость дополнительно урезается, чтобы не перебросить.
-let LOB_MIN_SPEED = 240, LOB_MAX_SPEED = 700;
-let LOB_MIN_LOFT = 190, LOB_MAX_LOFT = 560;
-let CHARGE_TIME = 0.8;  // сек до полного заряда
-let CHARGE_MIN = 0.32;  // доля силы при мгновенном тапе
-let GRAV = 680;         // гравитация (меньше => мяч дольше в полёте, легче)
-let BOUNCE = 0.5;
-let GROUND_FRICTION = 1.05; // затухание качения по газону
-let AIR_FRICTION = 0.14;   // затухание в полёте
+
+/* Все настраиваемые числа физики живут в physics.js — там и только там их
+   правят «навсегда». Здесь они лишь раскладываются по переменным, которые
+   симуляция читает каждый кадр (ползунки админки пишут прямо в них).
+   Сила паса/удара зависит от заряда шкалы усилия (min при тапе, max при полном).
+   Подброс удара растёт как f² — почти весь диапазон это резкий низкий удар.
+   Дальность навеса ≈ speed · (2·loft/GRAV) − потери на трении. */
+const PHYSICS = window.PHYSICS;
+let SPEED = PHYSICS.SPEED;
+let SPRINT = PHYSICS.SPRINT;
+let GK_SPEED = PHYSICS.GK_SPEED;
+let ACCEL = PHYSICS.ACCEL;
+let CTRL_R = PHYSICS.CTRL_R;
+let TACKLE_R = PHYSICS.TACKLE_R;
+let TACKLE_STEAL_R = PHYSICS.TACKLE_STEAL_R;
+let STEAL_RATE = PHYSICS.STEAL_RATE;
+let DRIBBLE_AHEAD = PHYSICS.DRIBBLE_AHEAD;
+let PASS_MIN = PHYSICS.PASS_MIN, PASS_MAX = PHYSICS.PASS_MAX;
+let SHOT_MIN = PHYSICS.SHOT_MIN, SHOT_MAX = PHYSICS.SHOT_MAX;
+let SHOT_MIN_LOFT = PHYSICS.SHOT_MIN_LOFT, SHOT_MAX_LOFT = PHYSICS.SHOT_MAX_LOFT;
+let LOB_MIN_SPEED = PHYSICS.LOB_MIN_SPEED, LOB_MAX_SPEED = PHYSICS.LOB_MAX_SPEED;
+let LOB_MIN_LOFT = PHYSICS.LOB_MIN_LOFT, LOB_MAX_LOFT = PHYSICS.LOB_MAX_LOFT;
+let CHARGE_TIME = PHYSICS.CHARGE_TIME;
+let CHARGE_MIN = PHYSICS.CHARGE_MIN;
+let GRAV = PHYSICS.GRAV;
+let BOUNCE = PHYSICS.BOUNCE;
+let GROUND_FRICTION = PHYSICS.GROUND_FRICTION;
+let AIR_FRICTION = PHYSICS.AIR_FRICTION;
 
 /* =========================================================================
    Где разрешён мультиплеер.
@@ -271,6 +274,9 @@ const PHYS_GROUPS = [
 ];
 
 const PHYS_ITEMS = PHYS_GROUPS.reduce((a, g) => a.concat(g.items), []);
+// Значения «из кода» — то, что записано в physics.js. Ползунки хранят только
+// отличия от них, поэтому правка physics.js доезжает до игрока даже после того,
+// как он что-то покрутил: перетираются лишь реально сдвинутые параметры.
 const PHYS_DEFAULTS = {};
 PHYS_ITEMS.forEach((it) => { PHYS_DEFAULTS[it.k] = it.get(); });
 
@@ -279,13 +285,15 @@ function physFmt(it) {
   return it.step < 1 ? v.toFixed(2).replace(/0$/, "") : String(Math.round(v));
 }
 
+function physChanged(it) { return Math.abs(it.get() - PHYS_DEFAULTS[it.k]) > 1e-9; }
+
 function buildPhysUI() {
   const host = document.getElementById("physList");
   if (!host) return;
   host.innerHTML = PHYS_GROUPS.map((g) =>
     `<div class="phys-group">${g.title}</div>` + g.items.map((it) =>
       `<label class="prow">
-         <span class="prow-top"><span>${it.label}</span><b data-v="${it.k}">${physFmt(it)}</b></span>
+         <span class="prow-top"><span>${it.label}</span><b data-v="${it.k}" class="${physChanged(it) ? "changed" : ""}">${physFmt(it)}</b></span>
          <input type="range" data-k="${it.k}" min="${it.min}" max="${it.max}" step="${it.step}" value="${it.get()}" />
        </label>`).join("")
   ).join("");
@@ -294,7 +302,9 @@ function buildPhysUI() {
     const it = PHYS_ITEMS.find((x) => x.k === inp.dataset.k);
     inp.addEventListener("input", () => {
       it.set(parseFloat(inp.value));
-      host.querySelector(`b[data-v="${it.k}"]`).textContent = physFmt(it);
+      const b = host.querySelector(`b[data-v="${it.k}"]`);
+      b.textContent = physFmt(it);
+      b.classList.toggle("changed", physChanged(it));
       savePhys();
     });
     // после отпускания снимаем фокус — иначе стрелки будут двигать ползунок, а не игрока
@@ -302,10 +312,17 @@ function buildPhysUI() {
   });
 }
 
+// В localStorage кладём ТОЛЬКО отличия от physics.js. Иначе один раз тронутая
+// панель заморозила бы у игрока весь набор чисел, и правки в коде до него бы не дошли.
+const PHYS_STORE_V = 2;   // v1 хранил все 25 чисел целиком — такие записи выбрасываем
+
 function savePhys() {
-  const o = {};
-  PHYS_ITEMS.forEach((it) => { o[it.k] = it.get(); });
-  try { localStorage.setItem("phys", JSON.stringify(o)); } catch (_) {}
+  const d = {};
+  PHYS_ITEMS.forEach((it) => { if (physChanged(it)) d[it.k] = it.get(); });
+  try {
+    if (Object.keys(d).length) localStorage.setItem("phys", JSON.stringify({ v: PHYS_STORE_V, d }));
+    else localStorage.removeItem("phys");
+  } catch (_) {}
 }
 
 function loadPhys() {
@@ -313,7 +330,8 @@ function loadPhys() {
     const raw = localStorage.getItem("phys");
     if (!raw) return;
     const o = JSON.parse(raw);
-    PHYS_ITEMS.forEach((it) => { if (typeof o[it.k] === "number") it.set(o[it.k]); });
+    if (!o || o.v !== PHYS_STORE_V) { localStorage.removeItem("phys"); return; }
+    PHYS_ITEMS.forEach((it) => { if (typeof o.d[it.k] === "number") it.set(o.d[it.k]); });
   } catch (_) {}
 }
 
@@ -323,15 +341,28 @@ function resetPhys() {
   buildPhysUI();
 }
 
-// Текст для переноса подобранных значений в код.
+// Готовое содержимое physics.js с текущими значениями — заменить файл в репозитории,
+// и подобранная физика становится общей для всех запусков и всех игроков.
 function physAsCode() {
-  const line = (it) => {
-    const v = it.get();
-    return `${it.k} = ${it.step < 1 ? v : Math.round(v)}`;
-  };
-  return PHYS_GROUPS.map((g) =>
-    "// " + g.title + "\n" + g.items.map((it) => "let " + line(it) + ";").join("\n")
+  const num = (it) => (it.step < 1 ? +it.get().toFixed(3) : Math.round(it.get()));
+  const pad = (s, n) => s + " ".repeat(Math.max(1, n - s.length));
+  const body = PHYS_GROUPS.map((g) =>
+    "  // " + g.title + "\n" + g.items.map((it) =>
+      "  " + pad(it.k + ": " + num(it) + ",", 26) + "// " + it.label
+    ).join("\n")
   ).join("\n\n");
+  return '"use strict";\n' +
+    "/* =========================================================================\n" +
+    "   Настройки физики — единственное место, где живут числа.\n\n" +
+    "   Менять можно двумя способами:\n" +
+    "     1) прямо здесь руками — это просто числа, математики тут нет;\n" +
+    "     2) ползунками в игре (⚙ → «Физика»), а потом нажать «Экспорт» —\n" +
+    "        кнопка отдаёт готовое содержимое ЭТОГО файла, останется заменить.\n\n" +
+    "   Значения отсюда — общие для всех запусков и всех игроков. Ползунки в игре\n" +
+    "   переопределяют их только в текущем браузере и только те параметры, которые\n" +
+    "   реально двигали: всё остальное продолжает браться отсюда.\n" +
+    "   ========================================================================= */\n" +
+    "window.PHYSICS = {\n" + body + "\n};\n";
 }
 
 /* ---- Вкладки панели ---- */
@@ -360,9 +391,23 @@ document.querySelectorAll(".stab").forEach((b) =>
 const copyBtn = document.getElementById("settingsCopy");
 if (copyBtn) copyBtn.addEventListener("click", () => {
   const text = physAsCode();
-  const done = () => { copyBtn.textContent = "Скопировано"; setTimeout(() => copyBtn.textContent = "Копировать", 1400); };
-  if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, () => console.log(text));
-  else console.log(text);
+  const flash = (msg) => { copyBtn.textContent = msg; setTimeout(() => copyBtn.textContent = "Экспорт", 1600); };
+  // Запасной путь: скрытая textarea + execCommand — работает там, где нет
+  // clipboard API (http-страница, старый WebView).
+  const legacy = () => {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.cssText = "position:fixed;opacity:0;left:-9999px";
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand("copy"); } catch (_) {}
+    ta.remove();
+    flash(ok ? "Скопировано" : "См. консоль");
+    if (!ok) console.log(text);
+  };
+  if (navigator.clipboard) navigator.clipboard.writeText(text).then(() => flash("Скопировано"), legacy);
+  else legacy();
 });
 
 function openSettings() {

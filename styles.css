@@ -40,7 +40,7 @@ html, body {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 8px 16px;
+  padding: 8px 62px 8px 16px;   /* справа место под шестерёнку */
   z-index: 5;
 }
 
@@ -71,7 +71,12 @@ html, body {
   border-radius: 999px;
 }
 
+/* z-index выше меню (12): настройки открываются и из меню, и во время матча */
 #settingsBtn {
+  position: fixed;
+  top: calc(10px + env(safe-area-inset-top));
+  right: calc(14px + env(safe-area-inset-right));
+  z-index: 14;
   appearance: none;
   border: 1px solid rgba(255, 255, 255, 0.25);
   background: rgba(0, 0, 0, 0.3);
@@ -203,6 +208,12 @@ html, body {
   margin-bottom: 2px;
 }
 .prow-top b { color: #ffe14d; font-variant-numeric: tabular-nums; font-size: 13px; }
+/* Точка = значение отличается от physics.js, т.е. хранится локально как правка */
+.prow-top b.changed::after {
+  content: "•";
+  color: #7fe08a;
+  margin-left: 4px;
+}
 .prow input[type="range"] { height: 20px; }
 .prow input[type="range"]::-webkit-slider-thumb { width: 18px; height: 18px; margin-top: -5px; }
 .prow input[type="range"]::-moz-range-thumb { width: 18px; height: 18px; }
@@ -790,7 +801,8 @@ button#startBtn:active { transform: scale(0.96); }
 
 /* Невысокие альбомные экраны — слегка ужимаем, но контролы остаются крупными. */
 @media (orientation: landscape) and (max-height: 420px) {
-  #hud { padding: 4px 14px; }
+  #hud { padding: 4px 58px 4px 14px; }
+  #settingsBtn { top: calc(4px + env(safe-area-inset-top)); width: 34px; height: 34px; font-size: 17px; }
   #gamepad { padding: 0 16px calc(10px + env(safe-area-inset-bottom)) 16px; }
   .stick { width: 150px; height: 150px; margin-left: 24px; }
   .knob { width: 70px; height: 70px; margin: -35px 0 0 -35px; }

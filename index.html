@@ -19,9 +19,11 @@
     </div>
     <div class="hud-right">
       <div id="clock">02:00</div>
-      <button id="settingsBtn" aria-label="Настройки">⚙</button>
     </div>
   </header>
+
+  <!-- Шестерёнка живёт вне HUD: так она доступна и поверх меню, и в матче -->
+  <button id="settingsBtn" aria-label="Настройки">⚙</button>
 
   <canvas id="pitch" aria-label="Игровое поле"></canvas>
 
@@ -156,11 +158,11 @@
 
       <div class="spane" id="panePhys" hidden>
         <div id="physList"></div>
-        <p class="setting-hint phys-note">Матч продолжается, обеими командами играет ИИ — двигай ползунок и смотри со стороны. Управление вернётся, когда закроешь панель.</p>
+        <p class="setting-hint phys-note">Матч продолжается, обеими командами играет ИИ — двигай ползунок и смотри со стороны. Управление вернётся, когда закроешь панель.<br />Подобрал — жми «Экспорт»: в буфер ляжет готовый <b>physics.js</b>, заменишь файл в репозитории — и значения станут общими для всех запусков.</p>
       </div>
 
       <div class="settings-actions">
-        <button id="settingsCopy" class="btn-ghost" hidden>Копировать</button>
+        <button id="settingsCopy" class="btn-ghost" hidden>Экспорт</button>
         <button id="settingsReset" class="btn-ghost">Сброс</button>
         <button id="settingsClose">Готово</button>
       </div>
@@ -176,6 +178,7 @@
   </div>
 </div>
 
+<script src="./physics.js"></script>
 <script src="./vendor/three.min.js"></script>
 <script src="./vendor/peerjs.min.js"></script>
 <script src="./scene.js"></script>
