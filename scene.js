@@ -13,10 +13,15 @@ window.Scene3D = (function () {
 
   // Настройки камеры (меняются из UI). angle — наклон к горизонту (0..90),
   // height — высота камеры в единицах сцены. Дистанция выводится из них.
-  const camCfg = { angle: 40, height: 10 };
-  const CAM_LOOK_Y = 2.0;   // высота точки, на которую смотрит камера
-  const CAM_AHEAD = 2.0;    // фокус чуть впереди мяча
+  const camCfg = { angle: 40, height: 8.5 };
+  // Смотрим почти на сам мяч, а не поверх голов — иначе он висит в нижней
+  // трети кадра. Высота по умолчанию снижена так, чтобы дистанция
+  // (height − CAM_LOOK_Y)/tan(angle) осталась прежней и поле не отъехало.
+  const CAM_LOOK_Y = 0.3;      // высота точки, на которую смотрит камера в игре
+  const CAM_LOOK_INTRO = 3.0;  // на заставке смотрим выше — видно трибуны и тоннель
+  const CAM_AHEAD = 1.0;       // фокус чуть впереди мяча
   const CAM_MAX_DIST = 70;  // ограничение на очень пологих углах
+  const BALL_R = 0.14;      // радиус мяча в единицах сцены (чисто визуальный)
 
   function setCamera(opts) {
     if (!opts) return;
@@ -29,6 +34,7 @@ window.Scene3D = (function () {
   let L, W, halfL, halfW, MOUTH_LO, MOUTH_HI, GOAL_HALF;
   let groundHalfX, groundHalfZ; // половина размера газона в единицах сцены
   let ballMesh, ballGroup;
+  let camLookY = CAM_LOOK_INTRO;   // сглаженная высота точки взгляда
   const playerMeshes = []; // индекс = id игрока
   let sceneTime = 0;
 
@@ -405,11 +411,11 @@ window.Scene3D = (function () {
 
     // Мяч
     ballGroup = new T.Group();
-    const ballShadow = new T.Mesh(new T.CircleGeometry(0.16, 16),
+    const ballShadow = new T.Mesh(new T.CircleGeometry(0.112, 16),
       new T.MeshBasicMaterial({ color: 0, transparent: true, opacity: 0.3 }));
     ballShadow.rotation.x = -Math.PI / 2; ballShadow.position.y = 0.012;
     ballGroup.add(ballShadow); ballGroup.userData.shadow = ballShadow;
-    ballMesh = new T.Mesh(new T.SphereGeometry(0.2, 16, 12),
+    ballMesh = new T.Mesh(new T.SphereGeometry(BALL_R, 16, 12),
       new T.MeshStandardMaterial({ map: ballTexture(), roughness: 0.55 }));
     ballGroup.add(ballMesh);
     scene.add(ballGroup);
@@ -488,7 +494,7 @@ window.Scene3D = (function () {
     const b = gs.ball;
     const bx = (b.x - L / 2) * S, bz = (b.z - W / 2) * S, by = b.h * S;
     ballGroup.position.set(bx, 0, bz);
-    ballMesh.position.y = by + 0.2;
+    ballMesh.position.y = by + BALL_R;
     ballGroup.userData.shadow.material.opacity = Math.max(0.05, 0.3 - b.h * 0.002);
     const sc = Math.max(0.4, 1 - b.h * 0.004);
     ballGroup.userData.shadow.scale.set(sc, sc, sc);
@@ -510,8 +516,14 @@ window.Scene3D = (function () {
     const lookZ = fz + CAM_AHEAD;
     // Не заезжаем за газон/трибуны, когда камера опускается к ближней бровке.
     const cz = Math.max(lookZ - horiz, -(groundHalfZ - 1));
+
+    // На заставке камера с того же места смотрит выше — в кадр попадают
+    // тоннель, трибуны и салюты. К свистку взгляд плавно съезжает на мяч.
+    const targetLook = gs.state === "intro" ? CAM_LOOK_INTRO : CAM_LOOK_Y;
+    camLookY += (targetLook - camLookY) * Math.min(1, 2.5 * dt);
+
     camera.position.set(fx, camY, cz);
-    camera.lookAt(fx, CAM_LOOK_Y, lookZ);
+    camera.lookAt(fx, camLookY, lookZ);
 
     renderer.render(scene, camera);
   }

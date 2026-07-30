@@ -205,7 +205,10 @@ const el = {
 /* =========================================================================
    Настройки камеры (угол/высота) — панель с ползунками, сохраняются локально
    ========================================================================= */
-const CAM_DEFAULTS = { angle: 40, height: 10 };
+const CAM_DEFAULTS = { angle: 40, height: 8.5 };
+// v1 хранил высоту, отмеренную от старой точки взгляда (2.0) — такие записи
+// дали бы заметно более широкий план, поэтому их выбрасываем.
+const CAM_STORE_V = 2;
 let paused = false;
 // Демо-режим: пока открыта панель физики, играют оба ИИ (только в матче с ИИ —
 // в сетевой игре командой соперника управляет живой человек).
@@ -219,7 +222,7 @@ function applyCamSettings(s, save) {
   if (el.angleVal) el.angleVal.textContent = Math.round(cur.angle) + "°";
   if (el.heightVal) el.heightVal.textContent = cur.height;
   if (save) {
-    try { localStorage.setItem("cam", JSON.stringify(cur)); } catch (_) {}
+    try { localStorage.setItem("cam", JSON.stringify({ v: CAM_STORE_V, angle: cur.angle, height: cur.height })); } catch (_) {}
   }
 }
 
@@ -227,7 +230,11 @@ function loadCamSettings() {
   let s = CAM_DEFAULTS;
   try {
     const raw = localStorage.getItem("cam");
-    if (raw) { const p = JSON.parse(raw); if (p && p.angle != null) s = p; }
+    if (raw) {
+      const p = JSON.parse(raw);
+      if (p && p.v === CAM_STORE_V && p.angle != null) s = p;
+      else localStorage.removeItem("cam");
+    }
   } catch (_) {}
   applyCamSettings(s, false);
 }
