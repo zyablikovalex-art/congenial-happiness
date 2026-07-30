@@ -243,6 +243,33 @@ function loadCamSettings() {
    Админка физики: живые ползунки. Значения пишутся прямо в переменные,
    которые симуляция читает каждый кадр, поэтому эффект виден сразу.
    ========================================================================= */
+/* Живой расчёт траектории навеса — иначе два ползунка, произведение которых
+   даёт дальность, приходится подбирать вслепую.
+   время полёта  = 2·loft/GRAV        (вертикаль тормозит только гравитация)
+   вершина       = loft²/(2·GRAV)
+   дальность     = ∫ speed·e^(−AIR·t) = speed/AIR · (1 − e^(−AIR·flight)) */
+function lobFlight(f) {
+  const speed = LOB_MIN_SPEED + f * (LOB_MAX_SPEED - LOB_MIN_SPEED);
+  const loft = LOB_MIN_LOFT + f * (LOB_MAX_LOFT - LOB_MIN_LOFT);
+  const time = 2 * loft / GRAV;
+  return { speed, loft, time, apex: loft * loft / (2 * GRAV), dist: speed * airReach(time) };
+}
+
+// Путь, который мяч проходит по горизонтали за время t на единичной скорости.
+// При нулевом трении это просто t.
+function airReach(t) {
+  return AIR_FRICTION > 1e-6 ? (1 - Math.exp(-AIR_FRICTION * t)) / AIR_FRICTION : t;
+}
+
+function lobPreview() {
+  const row = (label, f) => {
+    const r = lobFlight(f);
+    return `${label}: вершина <b>${Math.round(r.apex)}</b> · дальность <b>${Math.round(r.dist)}</b> · ${r.time.toFixed(1)} с`;
+  };
+  return row("Полный заряд", 1) + "<br>" + row("Короткий тап", CHARGE_MIN) +
+    `<br>Для масштаба: поле 1800 в ширину, игрок бежит ${Math.round(SPEED)} в секунду.`;
+}
+
 const PHYS_GROUPS = [
   { title: "Бег", items: [
     { k: "SPEED",  label: "Скорость бега", min: 40, max: 260, step: 2, get: () => SPEED,  set: (v) => SPEED = v },
@@ -263,14 +290,17 @@ const PHYS_GROUPS = [
   { title: "Удар", items: [
     { k: "SHOT_MIN", label: "Сила: минимум", min: 200, max: 900, step: 10, get: () => SHOT_MIN, set: (v) => SHOT_MIN = v },
     { k: "SHOT_MAX", label: "Сила: максимум", min: 400, max: 1600, step: 10, get: () => SHOT_MAX, set: (v) => SHOT_MAX = v },
-    { k: "SHOT_MIN_LOFT", label: "Подъём: минимум", min: 0, max: 200, step: 5, get: () => SHOT_MIN_LOFT, set: (v) => SHOT_MIN_LOFT = v },
-    { k: "SHOT_MAX_LOFT", label: "Подъём: максимум", min: 100, max: 900, step: 10, get: () => SHOT_MAX_LOFT, set: (v) => SHOT_MAX_LOFT = v },
+    { k: "SHOT_MIN_LOFT", label: "Вверх: минимум", min: 0, max: 200, step: 5, get: () => SHOT_MIN_LOFT, set: (v) => SHOT_MIN_LOFT = v },
+    { k: "SHOT_MAX_LOFT", label: "Вверх: максимум", min: 100, max: 900, step: 10, get: () => SHOT_MAX_LOFT, set: (v) => SHOT_MAX_LOFT = v },
   ]},
-  { title: "Навес", items: [
-    { k: "LOB_MIN_SPEED", label: "Скорость: минимум", min: 100, max: 600, step: 10, get: () => LOB_MIN_SPEED, set: (v) => LOB_MIN_SPEED = v },
-    { k: "LOB_MAX_SPEED", label: "Скорость: максимум", min: 300, max: 1400, step: 10, get: () => LOB_MAX_SPEED, set: (v) => LOB_MAX_SPEED = v },
-    { k: "LOB_MIN_LOFT", label: "Дуга: минимум", min: 50, max: 500, step: 10, get: () => LOB_MIN_LOFT, set: (v) => LOB_MIN_LOFT = v },
-    { k: "LOB_MAX_LOFT", label: "Дуга: максимум", min: 200, max: 1000, step: 10, get: () => LOB_MAX_LOFT, set: (v) => LOB_MAX_LOFT = v },
+  { title: "Навес", note: lobPreview, items: [
+    // «минимум» — это конец шкалы при нулевом заряде, а не то, что даёт тап:
+    // CHARGE_MIN не даёт f опуститься ниже 0.32. Реальные значения для тапа
+    // и для полного заряда показывает расчёт под группой.
+    { k: "LOB_MIN_SPEED", label: "Вперёд: минимум", min: 60, max: 800, step: 10, get: () => LOB_MIN_SPEED, set: (v) => LOB_MIN_SPEED = v },
+    { k: "LOB_MAX_SPEED", label: "Вперёд: максимум", min: 300, max: 1800, step: 10, get: () => LOB_MAX_SPEED, set: (v) => LOB_MAX_SPEED = v },
+    { k: "LOB_MIN_LOFT", label: "Вверх: минимум", min: 20, max: 500, step: 10, get: () => LOB_MIN_LOFT, set: (v) => LOB_MIN_LOFT = v },
+    { k: "LOB_MAX_LOFT", label: "Вверх: максимум", min: 100, max: 1000, step: 10, get: () => LOB_MAX_LOFT, set: (v) => LOB_MAX_LOFT = v },
   ]},
   { title: "Шкала усилия", items: [
     { k: "CHARGE_TIME", label: "Время до максимума, с", min: 0.2, max: 2, step: 0.05, get: () => CHARGE_TIME, set: (v) => CHARGE_TIME = v },
@@ -299,15 +329,25 @@ function physFmt(it) {
 
 function physChanged(it) { return Math.abs(it.get() - PHYS_DEFAULTS[it.k]) > 1e-9; }
 
+// Пересчёт живых подсказок под группами (гравитация и трение влияют на навес,
+// поэтому обновляем все, а не только ту группу, где двигали ползунок).
+function refreshPhysNotes() {
+  document.querySelectorAll("#physList .phys-live").forEach((el2) => {
+    const g = PHYS_GROUPS[+el2.dataset.note];
+    if (g && g.note) el2.innerHTML = g.note();
+  });
+}
+
 function buildPhysUI() {
   const host = document.getElementById("physList");
   if (!host) return;
-  host.innerHTML = PHYS_GROUPS.map((g) =>
+  host.innerHTML = PHYS_GROUPS.map((g, gi) =>
     `<div class="phys-group">${g.title}</div>` + g.items.map((it) =>
       `<label class="prow">
          <span class="prow-top"><span>${it.label}</span><b data-v="${it.k}" class="${physChanged(it) ? "changed" : ""}">${physFmt(it)}</b></span>
          <input type="range" data-k="${it.k}" min="${it.min}" max="${it.max}" step="${it.step}" value="${it.get()}" />
-       </label>`).join("")
+       </label>`).join("") +
+    (g.note ? `<div class="phys-live" data-note="${gi}">${g.note()}</div>` : "")
   ).join("");
 
   host.querySelectorAll("input[type=range]").forEach((inp) => {
@@ -317,6 +357,7 @@ function buildPhysUI() {
       const b = host.querySelector(`b[data-v="${it.k}"]`);
       b.textContent = physFmt(it);
       b.classList.toggle("changed", physChanged(it));
+      refreshPhysNotes();
       savePhys();
     });
     // после отпускания снимаем фокус — иначе стрелки будут двигать ползунок, а не игрока
@@ -723,11 +764,12 @@ function doLob(p, f) {
   const dir = passDirection(p);            // направление — как у обычного паса
   let speed = LOB_MIN_SPEED + f * (LOB_MAX_SPEED - LOB_MIN_SPEED);
   const loft = LOB_MIN_LOFT + f * (LOB_MAX_LOFT - LOB_MIN_LOFT);
-  // Если целимся в партнёра — не перебрасываем его: время полёта 2·loft/GRAV,
-  // значит нужная скорость ≈ дистанция / время (+ поправка на трение воздуха).
+  // Если целимся в партнёра — не перебрасываем его. Время полёта задано
+  // подъёмом, за него мяч пролетает speed·airReach(время) — решаем это
+  // относительно скорости. Точно при любых GRAV и AIR_FRICTION.
   if (dir.target) {
     const flight = 2 * loft / GRAV;
-    speed = Math.min(speed, (dir.dist / flight) * 1.12);
+    speed = Math.min(speed, dir.dist / airReach(flight));
   }
   kick(speed, dir.x, dir.z, loft);
 }

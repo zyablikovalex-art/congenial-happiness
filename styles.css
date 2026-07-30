@@ -234,6 +234,19 @@ html, body {
 .prow input[type="range"]::-moz-range-thumb { width: 18px; height: 18px; }
 .phys-note { margin-top: 12px; }
 
+/* Живой расчёт под группой ползунков */
+.phys-live {
+  margin: 2px 0 6px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.7);
+}
+.phys-live b { color: #ffe14d; font-variant-numeric: tabular-nums; }
+
 /* Режим «панель не блокирует игру»: матч виден и продолжается */
 #settings.live { background: transparent; pointer-events: none; }
 #settings.live .card { pointer-events: auto; }
