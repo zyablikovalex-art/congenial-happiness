@@ -136,18 +136,31 @@
   <!-- Настройки камеры -->
   <div id="settings" hidden>
     <div class="card">
-      <h2>Камера</h2>
-      <label class="setting">
-        <span class="setting-row">Угол к горизонту <b id="angleVal">40°</b></span>
-        <input type="range" id="angleRange" min="0" max="90" step="1" value="40" />
-        <span class="setting-hint">0° — сбоку у газона · 90° — строго сверху</span>
-      </label>
-      <label class="setting">
-        <span class="setting-row">Высота <b id="heightVal">10</b></span>
-        <input type="range" id="heightRange" min="3" max="30" step="0.5" value="10" />
-        <span class="setting-hint">выше — видно больше поля</span>
-      </label>
+      <div class="stabs">
+        <button class="stab active" data-tab="cam">Камера</button>
+        <button class="stab" data-tab="phys">Физика</button>
+      </div>
+
+      <div class="spane" id="paneCam">
+        <label class="setting">
+          <span class="setting-row">Угол к горизонту <b id="angleVal">40°</b></span>
+          <input type="range" id="angleRange" min="0" max="90" step="1" value="40" />
+          <span class="setting-hint">0° — сбоку у газона · 90° — строго сверху</span>
+        </label>
+        <label class="setting">
+          <span class="setting-row">Высота <b id="heightVal">10</b></span>
+          <input type="range" id="heightRange" min="3" max="30" step="0.5" value="10" />
+          <span class="setting-hint">выше — видно больше поля</span>
+        </label>
+      </div>
+
+      <div class="spane" id="panePhys" hidden>
+        <div id="physList"></div>
+        <p class="setting-hint phys-note">Матч не встаёт на паузу — двигай ползунок и сразу смотри, что изменилось.</p>
+      </div>
+
       <div class="settings-actions">
+        <button id="settingsCopy" class="btn-ghost" hidden>Копировать</button>
         <button id="settingsReset" class="btn-ghost">Сброс</button>
         <button id="settingsClose">Готово</button>
       </div>

@@ -157,6 +157,61 @@ html, body {
   border: 2px solid rgba(255, 255, 255, 0.7);
 }
 
+/* Вкладки настроек */
+.stabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 14px;
+  background: rgba(0, 0, 0, 0.28);
+  padding: 4px;
+  border-radius: 12px;
+}
+.stab {
+  flex: 1;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 9px 10px;
+  border-radius: 9px;
+  cursor: pointer;
+}
+.stab.active { background: rgba(255, 255, 255, 0.16); color: #fff; }
+.spane[hidden] { display: none; }
+
+/* Список параметров физики — компактнее и с прокруткой */
+#panePhys { max-height: 46vh; overflow-y: auto; padding-right: 4px; }
+.phys-group {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #ffe14d;
+  opacity: 0.85;
+  margin: 14px 0 8px;
+}
+.phys-group:first-child { margin-top: 0; }
+.prow { display: block; margin-bottom: 10px; text-align: left; }
+.prow-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 13px;
+  margin-bottom: 2px;
+}
+.prow-top b { color: #ffe14d; font-variant-numeric: tabular-nums; font-size: 13px; }
+.prow input[type="range"] { height: 20px; }
+.prow input[type="range"]::-webkit-slider-thumb { width: 18px; height: 18px; margin-top: -5px; }
+.prow input[type="range"]::-moz-range-thumb { width: 18px; height: 18px; }
+.phys-note { margin-top: 12px; }
+
+/* Режим «панель не блокирует игру»: матч виден и продолжается */
+#settings.live { background: transparent; pointer-events: none; }
+#settings.live .card { pointer-events: auto; }
+
 .settings-actions {
   display: flex;
   gap: 10px;

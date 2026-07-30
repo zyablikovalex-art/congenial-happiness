@@ -21,29 +21,31 @@ const MOUTH_HI = PITCH_W / 2 + GOAL_HALF;
 
 // ---- Тюнинг ----
 const MATCH_SECONDS = 120;
-const SPEED = 106;        // базовая скорость бега (мир/сек) — игроки бегают медленно
-const SPRINT = 150;       // скорость со спринтом
-const GK_SPEED = 94;
-const ACCEL = 1700;       // ускорение большое => резкий отклик (реакция), бег остаётся медленным
-const CTRL_R = 27;        // радиус получения контроля над мячом
-const TACKLE_R = 28;      // радиус отбора (ИИ, автоматический)
-const TACKLE_STEAL_R = 46;// радиус ручного отбора по кнопке «Пас»
-const STEAL_RATE = 2.2;   // вероятность отбора в секунду при контакте
-const DRIBBLE_AHEAD = 24; // насколько мяч выносится вперёд при ведении
+let SPEED = 106;        // базовая скорость бега (мир/сек) — игроки бегают медленно
+let SPRINT = 150;       // скорость со спринтом
+let GK_SPEED = 94;
+let ACCEL = 1700;       // ускорение большое => резкий отклик (реакция), бег остаётся медленным
+let CTRL_R = 27;        // радиус получения контроля над мячом
+let TACKLE_R = 28;      // радиус отбора (ИИ, автоматический)
+let TACKLE_STEAL_R = 46;// радиус ручного отбора по кнопке «Пас»
+let STEAL_RATE = 2.2;   // вероятность отбора в секунду при контакте
+let DRIBBLE_AHEAD = 24; // насколько мяч выносится вперёд при ведении
 // Сила паса/удара зависит от заряда шкалы усилия (min при коротком тапе, max при полном).
-const PASS_MIN = 300, PASS_MAX = 820;
-const SHOT_MIN = 480, SHOT_MAX = 940;
+let PASS_MIN = 300, PASS_MAX = 820;
+let SHOT_MIN = 480, SHOT_MAX = 940;
 // Подброс удара растёт с зарядом как f² — почти весь диапазон это резкий низкий удар,
 // и только у самого максимума мяч перелетает перекладину.
-const SHOT_MIN_LOFT = 20, SHOT_MAX_LOFT = 470;
+let SHOT_MIN_LOFT = 20, SHOT_MAX_LOFT = 470;
 // Навес (пас с подъёмом): дальность ≈ speed · (2·loft/GRAV) − потери на трении.
 // При выбранном партнёре скорость дополнительно урезается, чтобы не перебросить.
-const LOB_MIN_SPEED = 240, LOB_MAX_SPEED = 700;
-const LOB_MIN_LOFT = 190, LOB_MAX_LOFT = 560;
-const CHARGE_TIME = 0.8;  // сек до полного заряда
-const CHARGE_MIN = 0.32;  // доля силы при мгновенном тапе
-const GRAV = 680;         // гравитация (меньше => мяч дольше в полёте, легче)
-const BOUNCE = 0.5;
+let LOB_MIN_SPEED = 240, LOB_MAX_SPEED = 700;
+let LOB_MIN_LOFT = 190, LOB_MAX_LOFT = 560;
+let CHARGE_TIME = 0.8;  // сек до полного заряда
+let CHARGE_MIN = 0.32;  // доля силы при мгновенном тапе
+let GRAV = 680;         // гравитация (меньше => мяч дольше в полёте, легче)
+let BOUNCE = 0.5;
+let GROUND_FRICTION = 1.05; // затухание качения по газону
+let AIR_FRICTION = 0.14;   // затухание в полёте
 
 /* =========================================================================
    Где разрешён мультиплеер.
@@ -219,24 +221,167 @@ function loadCamSettings() {
   applyCamSettings(s, false);
 }
 
+/* =========================================================================
+   Админка физики: живые ползунки. Значения пишутся прямо в переменные,
+   которые симуляция читает каждый кадр, поэтому эффект виден сразу.
+   ========================================================================= */
+const PHYS_GROUPS = [
+  { title: "Бег", items: [
+    { k: "SPEED",  label: "Скорость бега", min: 40, max: 260, step: 2, get: () => SPEED,  set: (v) => SPEED = v },
+    { k: "SPRINT", label: "Спринт",        min: 60, max: 320, step: 2, get: () => SPRINT, set: (v) => SPRINT = v },
+    { k: "ACCEL",  label: "Ускорение (отклик)", min: 300, max: 4000, step: 50, get: () => ACCEL, set: (v) => ACCEL = v },
+    { k: "GK_SPEED", label: "Скорость вратаря", min: 40, max: 220, step: 2, get: () => GK_SPEED, set: (v) => GK_SPEED = v },
+  ]},
+  { title: "Мяч", items: [
+    { k: "GRAV",   label: "Гравитация",    min: 200, max: 1400, step: 20, get: () => GRAV,   set: (v) => GRAV = v },
+    { k: "BOUNCE", label: "Отскок от газона", min: 0, max: 0.9, step: 0.05, get: () => BOUNCE, set: (v) => BOUNCE = v },
+    { k: "GROUND_FRICTION", label: "Трение о газон", min: 0.2, max: 3, step: 0.05, get: () => GROUND_FRICTION, set: (v) => GROUND_FRICTION = v },
+    { k: "AIR_FRICTION",    label: "Сопротивление воздуха", min: 0, max: 1, step: 0.02, get: () => AIR_FRICTION, set: (v) => AIR_FRICTION = v },
+  ]},
+  { title: "Пас", items: [
+    { k: "PASS_MIN", label: "Сила: короткий тап", min: 100, max: 700, step: 10, get: () => PASS_MIN, set: (v) => PASS_MIN = v },
+    { k: "PASS_MAX", label: "Сила: полный заряд", min: 300, max: 1400, step: 10, get: () => PASS_MAX, set: (v) => PASS_MAX = v },
+  ]},
+  { title: "Удар", items: [
+    { k: "SHOT_MIN", label: "Сила: минимум", min: 200, max: 900, step: 10, get: () => SHOT_MIN, set: (v) => SHOT_MIN = v },
+    { k: "SHOT_MAX", label: "Сила: максимум", min: 400, max: 1600, step: 10, get: () => SHOT_MAX, set: (v) => SHOT_MAX = v },
+    { k: "SHOT_MIN_LOFT", label: "Подъём: минимум", min: 0, max: 200, step: 5, get: () => SHOT_MIN_LOFT, set: (v) => SHOT_MIN_LOFT = v },
+    { k: "SHOT_MAX_LOFT", label: "Подъём: максимум", min: 100, max: 900, step: 10, get: () => SHOT_MAX_LOFT, set: (v) => SHOT_MAX_LOFT = v },
+  ]},
+  { title: "Навес", items: [
+    { k: "LOB_MIN_SPEED", label: "Скорость: минимум", min: 100, max: 600, step: 10, get: () => LOB_MIN_SPEED, set: (v) => LOB_MIN_SPEED = v },
+    { k: "LOB_MAX_SPEED", label: "Скорость: максимум", min: 300, max: 1400, step: 10, get: () => LOB_MAX_SPEED, set: (v) => LOB_MAX_SPEED = v },
+    { k: "LOB_MIN_LOFT", label: "Дуга: минимум", min: 50, max: 500, step: 10, get: () => LOB_MIN_LOFT, set: (v) => LOB_MIN_LOFT = v },
+    { k: "LOB_MAX_LOFT", label: "Дуга: максимум", min: 200, max: 1000, step: 10, get: () => LOB_MAX_LOFT, set: (v) => LOB_MAX_LOFT = v },
+  ]},
+  { title: "Шкала усилия", items: [
+    { k: "CHARGE_TIME", label: "Время до максимума, с", min: 0.2, max: 2, step: 0.05, get: () => CHARGE_TIME, set: (v) => CHARGE_TIME = v },
+    { k: "CHARGE_MIN",  label: "Доля силы при тапе", min: 0.05, max: 1, step: 0.01, get: () => CHARGE_MIN, set: (v) => CHARGE_MIN = v },
+  ]},
+  { title: "Борьба за мяч", items: [
+    { k: "CTRL_R", label: "Радиус подбора", min: 10, max: 70, step: 1, get: () => CTRL_R, set: (v) => CTRL_R = v },
+    { k: "TACKLE_STEAL_R", label: "Радиус моего отбора", min: 15, max: 120, step: 1, get: () => TACKLE_STEAL_R, set: (v) => TACKLE_STEAL_R = v },
+    { k: "TACKLE_R", label: "Радиус отбора ИИ", min: 10, max: 70, step: 1, get: () => TACKLE_R, set: (v) => TACKLE_R = v },
+    { k: "STEAL_RATE", label: "Частота отбора ИИ, 1/с", min: 0, max: 8, step: 0.1, get: () => STEAL_RATE, set: (v) => STEAL_RATE = v },
+    { k: "DRIBBLE_AHEAD", label: "Вынос мяча при ведении", min: 5, max: 60, step: 1, get: () => DRIBBLE_AHEAD, set: (v) => DRIBBLE_AHEAD = v },
+  ]},
+];
+
+const PHYS_ITEMS = PHYS_GROUPS.reduce((a, g) => a.concat(g.items), []);
+const PHYS_DEFAULTS = {};
+PHYS_ITEMS.forEach((it) => { PHYS_DEFAULTS[it.k] = it.get(); });
+
+function physFmt(it) {
+  const v = it.get();
+  return it.step < 1 ? v.toFixed(2).replace(/0$/, "") : String(Math.round(v));
+}
+
+function buildPhysUI() {
+  const host = document.getElementById("physList");
+  if (!host) return;
+  host.innerHTML = PHYS_GROUPS.map((g) =>
+    `<div class="phys-group">${g.title}</div>` + g.items.map((it) =>
+      `<label class="prow">
+         <span class="prow-top"><span>${it.label}</span><b data-v="${it.k}">${physFmt(it)}</b></span>
+         <input type="range" data-k="${it.k}" min="${it.min}" max="${it.max}" step="${it.step}" value="${it.get()}" />
+       </label>`).join("")
+  ).join("");
+
+  host.querySelectorAll("input[type=range]").forEach((inp) => {
+    const it = PHYS_ITEMS.find((x) => x.k === inp.dataset.k);
+    inp.addEventListener("input", () => {
+      it.set(parseFloat(inp.value));
+      host.querySelector(`b[data-v="${it.k}"]`).textContent = physFmt(it);
+      savePhys();
+    });
+    // после отпускания снимаем фокус — иначе стрелки будут двигать ползунок, а не игрока
+    inp.addEventListener("change", () => inp.blur());
+  });
+}
+
+function savePhys() {
+  const o = {};
+  PHYS_ITEMS.forEach((it) => { o[it.k] = it.get(); });
+  try { localStorage.setItem("phys", JSON.stringify(o)); } catch (_) {}
+}
+
+function loadPhys() {
+  try {
+    const raw = localStorage.getItem("phys");
+    if (!raw) return;
+    const o = JSON.parse(raw);
+    PHYS_ITEMS.forEach((it) => { if (typeof o[it.k] === "number") it.set(o[it.k]); });
+  } catch (_) {}
+}
+
+function resetPhys() {
+  PHYS_ITEMS.forEach((it) => it.set(PHYS_DEFAULTS[it.k]));
+  savePhys();
+  buildPhysUI();
+}
+
+// Текст для переноса подобранных значений в код.
+function physAsCode() {
+  const line = (it) => {
+    const v = it.get();
+    return `${it.k} = ${it.step < 1 ? v : Math.round(v)}`;
+  };
+  return PHYS_GROUPS.map((g) =>
+    "// " + g.title + "\n" + g.items.map((it) => "let " + line(it) + ";").join("\n")
+  ).join("\n\n");
+}
+
+/* ---- Вкладки панели ---- */
+let settingsTab = "cam";
+
+function setSettingsTab(tab) {
+  settingsTab = tab;
+  document.querySelectorAll(".stab").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
+  const cam = document.getElementById("paneCam"), phys = document.getElementById("panePhys");
+  if (cam) cam.hidden = tab !== "cam";
+  if (phys) phys.hidden = tab !== "phys";
+  const copy = document.getElementById("settingsCopy");
+  if (copy) copy.hidden = tab !== "phys";
+  // На вкладке физики матч продолжается и панель не перекрывает игру,
+  // чтобы можно было двигать ползунок и сразу видеть результат.
+  const live = tab === "phys";
+  el.settings.classList.toggle("live", live);
+  paused = !live && state === "playing";
+}
+
+document.querySelectorAll(".stab").forEach((b) =>
+  b.addEventListener("click", () => setSettingsTab(b.dataset.tab)));
+
+const copyBtn = document.getElementById("settingsCopy");
+if (copyBtn) copyBtn.addEventListener("click", () => {
+  const text = physAsCode();
+  const done = () => { copyBtn.textContent = "Скопировано"; setTimeout(() => copyBtn.textContent = "Копировать", 1400); };
+  if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, () => console.log(text));
+  else console.log(text);
+});
+
 function openSettings() {
   if (!el.settings) return;
-  paused = true;
   resetCharge();
   pad.sprint = false;
   stickReset();
   keyHeld.clear();
   el.settings.hidden = false;
+  setSettingsTab(settingsTab);   // паузу решает вкладка
 }
 function closeSettings() {
   if (!el.settings) return;
   el.settings.hidden = true;
+  el.settings.classList.remove("live");
   paused = false;
 }
 
 if (el.settingsBtn) el.settingsBtn.addEventListener("click", openSettings);
 if (el.settingsClose) el.settingsClose.addEventListener("click", closeSettings);
-if (el.settingsReset) el.settingsReset.addEventListener("click", () => applyCamSettings(CAM_DEFAULTS, true));
+if (el.settingsReset) el.settingsReset.addEventListener("click", () => {
+  if (settingsTab === "phys") resetPhys();
+  else applyCamSettings(CAM_DEFAULTS, true);
+});
 if (el.angleRange) el.angleRange.addEventListener("input", () => applyCamSettings({ angle: +el.angleRange.value }, true));
 if (el.heightRange) el.heightRange.addEventListener("input", () => applyCamSettings({ height: +el.heightRange.value }, true));
 
@@ -551,10 +696,10 @@ function updateFreeBall(dt) {
     ball.h = 0;
     if (ball.vh < 0) ball.vh = -ball.vh * BOUNCE;
     if (Math.abs(ball.vh) < 30) ball.vh = 0;
-    const fr = Math.exp(-1.05 * dt); // трение о газон (мяч катится дальше на большом поле)
+    const fr = Math.exp(-GROUND_FRICTION * dt); // трение о газон
     ball.vx *= fr; ball.vz *= fr;
   } else {
-    const fr = Math.exp(-0.14 * dt); // почти нет сопротивления в полёте => навес несётся дальше
+    const fr = Math.exp(-AIR_FRICTION * dt);   // сопротивление воздуха в полёте
     ball.vx *= fr; ball.vz *= fr;
   }
   const sp = hyp(ball.vx, ball.vz);
@@ -1455,6 +1600,8 @@ if (!window.matchMedia("(display-mode: standalone)").matches) {
 
 Scene3D.init(canvas, { PITCH_L, PITCH_W, GOAL_HALF, MOUTH_LO, MOUTH_HI });
 loadCamSettings();
+loadPhys();
+buildPhysUI();
 resize();
 // повторный расчёт после того, как layout устоялся
 setTimeout(resize, 60);
