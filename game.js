@@ -737,8 +737,14 @@ function doShoot(p, f) {
 
 // Общее направление передачи — используется и пасом, и навесом, чтобы они
 // вели себя одинаково. Возвращает единичный вектор, партнёра-цель и дистанцию.
-function passDirection(p) {
+function passDirection(p, opts) {
   const attackDir = p.team === 0 ? 1 : -1;
+  // Докуда вообще искать партнёра и на какой дистанции он предпочтителен.
+  // У паса низом — «ближе лучше». У навеса — «ближе к тому месту, куда
+  // добьёт текущий заряд», иначе длинный навес всегда цеплялся бы за
+  // ближайшего своего и укорачивался до него.
+  const maxDist = (opts && opts.maxDist) || 480;
+  const preferDist = opts && opts.preferDist;
 
   // Прицел. У активного игрока — джойстик/клавиши (куда целишься),
   // иначе (в т.ч. ИИ) — куда смотрит игрок, в крайнем случае вперёд к воротам.
@@ -758,10 +764,11 @@ function passDirection(p) {
   for (const t of players) {
     if (t.team !== p.team || t === p || t.isGK) continue;
     const dx = t.x - p.x, dz = t.z - p.z, d = hyp(dx, dz);
-    if (d < 30 || d > 480) continue;
+    if (d < 30 || d > maxDist) continue;
     const align = (dx * aimx + dz * aimz) / d;   // -1..1: насколько партнёр в сторону прицела
     if (align < 0.30) continue;                  // не пасуем вбок/назад от прицела
-    const score = align * 1.8 - d / 500;         // приоритет — совпадение с прицелом, ближе лучше
+    const off = preferDist ? Math.abs(d - preferDist) : d;
+    const score = align * 1.8 - off / 500;       // приоритет — совпадение с прицелом
     if (score > bestScore) { bestScore = score; best = t; }
   }
 
@@ -784,17 +791,27 @@ function doPass(p, f) {
 function doLob(p, f) {
   if (!p || ball.owner !== p) return;
   if (f == null) f = 0.7;
-  const dir = passDirection(p);            // направление — как у обычного паса
-  let speed = LOB_MIN_SPEED + f * (LOB_MAX_SPEED - LOB_MIN_SPEED);
-  const loft = LOB_MIN_LOFT + f * (LOB_MAX_LOFT - LOB_MIN_LOFT);
-  // Если целимся в партнёра — не перебрасываем его. Время полёта задано
-  // подъёмом, за него мяч пролетает speed·airReach(время) — решаем это
-  // относительно скорости. Точно при любых GRAV и AIR_FRICTION.
-  if (dir.target) {
-    const flight = 2 * loft / GRAV;
-    speed = Math.min(speed, dir.dist / airReach(flight));
+  let r = lobFlight(f);   // скорость, подъём и дальность при этом заряде
+
+  // Адресата ищем на той дистанции, куда бьём: слабый навес найдёт ближнего,
+  // сильный — дальнего. Иначе любой свой в двух шагах впереди срезал бы
+  // полный заряд до своей дистанции, и шкала усилия меняла бы только высоту.
+  const dir = passDirection(p, { maxDist: r.dist * 1.15, preferDist: r.dist });
+
+  // Адресат ближе, чем добьёт заряд — гасим удар целиком, а не одну скорость.
+  // Иначе к партнёру в двух шагах ушла бы свеча на всю высоту заряда: подъём
+  // остался бы максимальным, а скорость упала бы почти до нуля.
+  if (dir.target && r.dist > dir.dist) {
+    let lo = 0, hi = f;                       // дальность растёт с зарядом
+    for (let i = 0; i < 14; i++) {
+      const mid = (lo + hi) / 2;
+      if (lobFlight(mid).dist > dir.dist) hi = mid; else lo = mid;
+    }
+    r = lobFlight(hi);
+    // Адресат ближе, чем летит даже нулевой заряд — остаётся урезать скорость.
+    if (r.dist > dir.dist) r.speed = dir.dist / airReach(r.time);
   }
-  kick(speed, dir.x, dir.z, loft);
+  kick(r.speed, dir.x, dir.z, r.loft);
 }
 
 // Отбор/перехват: рывок к мячу и захват при сближении.
