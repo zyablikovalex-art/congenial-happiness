@@ -20,7 +20,10 @@ const MOUTH_LO = PITCH_W / 2 - GOAL_HALF;
 const MOUTH_HI = PITCH_W / 2 + GOAL_HALF;
 
 // ---- Тюнинг ----
-const MATCH_SECONDS = 120;
+// Длительность матча задаётся перед стартом (экран заданий / лобби сетевой игры).
+const MATCH_MIN_DEF = 2, MATCH_MIN_LO = 0.5, MATCH_MIN_HI = 60;
+let matchMinutes = MATCH_MIN_DEF;
+let MATCH_SECONDS = matchMinutes * 60;
 
 /* Все настраиваемые числа физики живут в physics.js — там и только там их
    правят «навсегда». Здесь они лишь раскладываются по переменным, которые
@@ -186,6 +189,8 @@ const el = {
   mBack: document.getElementById("mBack"),
   mTasks: document.getElementById("mTasks"),
   mCards: document.getElementById("mCards"),
+  mLen: document.getElementById("mLen"),
+  netLenRow: document.getElementById("netLenRow"),
   netPanel: document.getElementById("netPanel"),
   netCodeInput: document.getElementById("netCodeInput"),
   netLocal: document.getElementById("netLocal"),
@@ -1284,6 +1289,9 @@ function onNetMessage(m) {
   } else if (m.t === "a" && netMode === "host") {
     remote.queue.push(m.a);
   } else if (m.t === "start" && netMode === "guest") {
+    // Длительность матча выбирает хост — у гостя она только для показа часов
+    // до первого снимка, дальше время приходит в снимках.
+    if (typeof m.secs === "number") setMatchMinutes(m.secs / 60, false);
     // Прячем лобби; само состояние матча приедет со снимками.
     el.overlay.classList.remove("show");
     if (el.netPanel) el.netPanel.hidden = true;
@@ -1471,6 +1479,46 @@ function renderTasks() {
   }).join("");
 }
 
+/* =========================================================================
+   Длительность матча. Задаётся в минутах перед стартом — на экране заданий
+   и в лобби сетевой игры (там её выбирает хост, гостю значение приезжает
+   вместе с командой «начали»). Выбор запоминается между запусками.
+   ========================================================================= */
+const matchLenInputs = Array.from(document.querySelectorAll(".matchmin"));
+
+function setMatchMinutes(v, save) {
+  const n = Number(v);
+  matchMinutes = isFinite(n) ? clamp(Math.round(n * 2) / 2, MATCH_MIN_LO, MATCH_MIN_HI) : MATCH_MIN_DEF;
+  MATCH_SECONDS = Math.round(matchMinutes * 60);
+  matchLenInputs.forEach((i) => { i.value = String(matchMinutes); });
+  if (save) { try { localStorage.setItem("matchMin", String(matchMinutes)); } catch (_) {} }
+}
+
+function loadMatchMinutes() {
+  let v = MATCH_MIN_DEF;
+  try { const raw = localStorage.getItem("matchMin"); if (raw != null) v = parseFloat(raw); } catch (_) {}
+  setMatchMinutes(v, false);
+}
+
+matchLenInputs.forEach((inp) => {
+  // Клик по полю не должен запускать матч — экран заданий стартует по клику куда угодно.
+  ["click", "pointerdown", "touchstart"].forEach((ev) =>
+    inp.addEventListener(ev, (e) => e.stopPropagation()));
+  // Правим значение по ходу набора, но выравниваем по шагу только когда закончили,
+  // иначе «15» не набрать: «1» тут же превратилось бы в минимум.
+  inp.addEventListener("input", () => {
+    const n = parseFloat(inp.value);
+    if (isFinite(n) && n >= MATCH_MIN_LO && n <= MATCH_MIN_HI) {
+      matchMinutes = n; MATCH_SECONDS = Math.round(n * 60);
+    }
+  });
+  inp.addEventListener("change", () => { setMatchMinutes(inp.value, true); inp.blur(); });
+  inp.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") inp.blur(); });
+});
+if (el.mLen) ["click", "pointerdown", "touchstart"].forEach((ev) =>
+  el.mLen.addEventListener(ev, (e) => e.stopPropagation()));
+loadMatchMinutes();
+
 function showMenu() {
   state = "menu";
   if (el.menuUI) { el.menuUI.classList.add("show"); el.menuUI.classList.remove("tasks"); }
@@ -1509,7 +1557,7 @@ function startMatch() {
   el.overlay.classList.remove("show");
   if (el.netPanel) el.netPanel.hidden = true;
   document.body.classList.remove("playing"); // геймпад скрыт во время заставки
-  if (netMode === "host") Net.send({ t: "start" });
+  if (netMode === "host") Net.send({ t: "start", secs: MATCH_SECONDS });
 }
 
 function endMatch() {
@@ -1575,6 +1623,7 @@ function openNetPanel() {
   el.netGo.hidden = false;
   el.netStart.hidden = true;
   el.netCopy.hidden = true;
+  if (el.netLenRow) el.netLenRow.hidden = true;   // длительность выбирает только хост
   netSay("Оба игрока вводят один код и жмут «Подключиться»");
 }
 
@@ -1597,6 +1646,7 @@ function connectNet() {
     if (Net.role === "host") {
       netSay("Соперник подключился — можно начинать");
       el.netStart.hidden = false;
+      if (el.netLenRow) el.netLenRow.hidden = false;
     } else {
       netSay("Подключено. Ждём, когда хост начнёт матч");
     }

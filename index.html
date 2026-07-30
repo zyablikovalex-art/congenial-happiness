@@ -86,9 +86,16 @@
                 <h2 class="mh2">Задания</h2>
               </div>
             </div>
-            <div class="mprogress">
-              <div class="mprogress-text">Открыто 2 из 4</div>
-              <div class="mprogress-bar"><i style="width:50%"></i></div>
+            <div class="mtasks-headright">
+              <label class="mlen" id="mLen">
+                <span>Матч</span>
+                <input class="matchmin" type="number" min="0.5" max="60" step="0.5" inputmode="decimal" aria-label="Длительность матча в минутах" />
+                <span>мин</span>
+              </label>
+              <div class="mprogress">
+                <div class="mprogress-text">Открыто 2 из 4</div>
+                <div class="mprogress-bar"><i style="width:50%"></i></div>
+              </div>
             </div>
           </div>
           <div class="mcards" id="mCards"></div>
@@ -119,6 +126,12 @@
         <span class="setting-row">Код комнаты</span>
         <input type="text" id="netCodeInput" maxlength="6" autocomplete="off" spellcheck="false" />
         <span class="setting-hint">Оба игрока вводят один код — или откройте ссылку ниже</span>
+      </label>
+      <label class="setting" id="netLenRow" hidden>
+        <span class="setting-row">Длительность матча, мин
+          <input class="matchmin" type="number" min="0.5" max="60" step="0.5" inputmode="decimal" />
+        </span>
+        <span class="setting-hint">Задаёт хост — гостю приедет вместе со стартом</span>
       </label>
       <label class="net-check">
         <input type="checkbox" id="netLocal" />
