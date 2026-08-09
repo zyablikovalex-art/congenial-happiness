@@ -374,9 +374,9 @@ window.Scene3D = (function () {
     c.width = c.height = 64;
     const g = c.getContext("2d");
     g.strokeStyle = "rgba(255,255,255,0.95)";
-    g.lineWidth = 3;
-    for (let i = 0; i <= 4; i++) {
-      const t = i * 16;
+    g.lineWidth = 9;                 // толстая верёвка, а не паутина
+    for (let i = 0; i <= 2; i++) {
+      const t = i * 32;
       g.beginPath(); g.moveTo(t, -2); g.lineTo(t, 66); g.stroke();
       g.beginPath(); g.moveTo(-2, t); g.lineTo(66, t); g.stroke();
     }
@@ -407,55 +407,47 @@ window.Scene3D = (function () {
       return m;
     };
 
-    // Передняя рама: стойки и перекладина стоят точно на линии ворот
-    tube(H, "y", tx, H / 2, zLo);
-    tube(H, "y", tx, H / 2, zHi);
-    tube(mouth + R * 2, "z", tx, H, midZ);
-    // Задняя рама
-    const bh = H * 0.62;                                   // сзади ворота ниже
-    tube(bh, "y", bx, bh / 2, zLo, R * 0.7);
-    tube(bh, "y", bx, bh / 2, zHi, R * 0.7);
-    tube(mouth, "z", bx, bh, midZ, R * 0.7);
-    // Верхние и нижние прогоны, соединяющие переднюю раму с задней
+    /* Рама строго прямоугольная: задние стойки той же высоты, что передние,
+       поэтому все прогоны идут либо строго горизонтально, либо вертикально —
+       наклонных элементов в раме нет. */
     [zLo, zHi].forEach((z) => {
-      const run = new T.Mesh(new T.CylinderGeometry(R * 0.6, R * 0.6, Math.hypot(depth, H - bh), 8), frameMat);
-      run.position.set((tx + bx) / 2, (H + bh) / 2, z);
-      run.rotation.z = Math.PI / 2;
-      run.rotation.y = Math.atan2(H - bh, Math.abs(depth)) * (depth > 0 ? -1 : 1);
-      grp.add(run);
-      tube(Math.abs(depth), "x", (tx + bx) / 2, R * 0.5, z, R * 0.6);
+      tube(H, "y", tx, H / 2, z);                        // передняя стойка
+      tube(H, "y", bx, H / 2, z, R * 0.75);              // задняя стойка
+      tube(Math.abs(depth), "x", (tx + bx) / 2, H, z, R * 0.65);      // верхний прогон
+      tube(Math.abs(depth), "x", (tx + bx) / 2, R * 0.5, z, R * 0.6); // нижний прогон
     });
+    tube(mouth + R * 2, "z", tx, H, midZ);               // передняя перекладина
+    tube(mouth, "z", bx, H, midZ, R * 0.75);             // задняя перекладина
 
     const netMat = new T.MeshBasicMaterial({
-      map: netTexture(), transparent: true, opacity: 0.65,
+      map: netTexture(), transparent: true, opacity: 0.8,
       side: T.DoubleSide, depthWrite: false,
     });
-    netMat.map.repeat.set(mouth * 3, H * 3);
+    netMat.map.repeat.set(mouth * 1.5, H * 1.5);         // крупная ячейка
 
     // Задняя стенка — деформируемая
-    const back = new T.Mesh(new T.PlaneGeometry(mouth, bh, 14, 9), netMat);
-    back.position.set(bx, bh / 2, midZ);
+    const back = new T.Mesh(new T.PlaneGeometry(mouth, H, 16, 11), netMat);
+    back.position.set(bx, H / 2, midZ);
     back.rotation.y = depth > 0 ? -Math.PI / 2 : Math.PI / 2;
     grp.add(back);
     const pos = back.geometry.attributes.position;
     nets.push({
       mesh: back, base: Float32Array.from(pos.array),
-      halfW: mouth / 2, height: bh, t: 1e9, ix: 0, iy: 0, amp: 0,
+      halfW: mouth / 2, height: H, t: 1e9, ix: 0, iy: 0, amp: 0, settled: true,
       side: gx === 0 ? 0 : 1,
     });
 
-    // Боковины и крыша — обычные плоскости по раме
-    const sideMat = netMat.clone(); sideMat.map = netMat.map; sideMat.opacity = 0.5;
+    // Боковины и крыша — теперь тоже строго прямоугольные
+    const sideMat = netMat.clone(); sideMat.map = netMat.map; sideMat.opacity = 0.62;
     [zLo, zHi].forEach((z) => {
-      const side = new T.Mesh(new T.PlaneGeometry(Math.abs(depth), H, 4, 4), sideMat);
-      side.position.set((tx + bx) / 2, H / 2 * 0.9, z);
+      const side = new T.Mesh(new T.PlaneGeometry(Math.abs(depth), H), sideMat);
+      side.position.set((tx + bx) / 2, H / 2, z);
       grp.add(side);
     });
-    const roof = new T.Mesh(new T.PlaneGeometry(mouth, Math.hypot(depth, H - bh), 6, 4), sideMat);
-    roof.position.set((tx + bx) / 2, (H + bh) / 2, midZ);
+    const roof = new T.Mesh(new T.PlaneGeometry(mouth, Math.abs(depth)), sideMat);
+    roof.position.set((tx + bx) / 2, H, midZ);
     roof.rotation.x = -Math.PI / 2;
     roof.rotation.z = Math.PI / 2;
-    roof.rotation.y = Math.atan2(H - bh, Math.abs(depth)) * (depth > 0 ? 1 : -1);
     grp.add(roof);
 
     return grp;
@@ -470,7 +462,7 @@ window.Scene3D = (function () {
     n.iy = Math.min(n.height, Math.max(0, worldH * S)) - n.height / 2;
     n.t = 0;
     // Провал до полуметра на сильном ударе, лёгкая рябь на слабом.
-    n.amp = 0.28 + 0.72 * Math.min(1, power == null ? 1 : power);
+    n.amp = 0.56 + 1.44 * Math.min(1, power == null ? 1 : power);
     n.settled = false;
   }
 
