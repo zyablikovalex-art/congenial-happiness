@@ -471,22 +471,28 @@ window.Scene3D = (function () {
     n.ix = (worldZ - W / 2) * S * (side === 0 ? 1 : -1);
     n.iy = Math.min(n.height, Math.max(0, worldH * S)) - n.height / 2;
     n.t = 0;
-    n.amp = 0.42;
+    n.amp = 0.9;            // провал сетки около полуметра — заметно, но в раму влезает
+    n.settled = false;
   }
 
   function updateNets(dt) {
     for (const n of nets) {
-      if (n.t > 1.6) continue;
-      n.t += dt;
       const pos = n.mesh.geometry.attributes.position;
-      const decay = Math.exp(-n.t * 2.6);
+      if (n.t > 3.2) {
+        // Волна кончилась — возвращаем сетку ровно на место. Без этого она
+        // так и оставалась провисшей: обновление просто переставало идти.
+        if (!n.settled) { pos.array.set(n.base); pos.needsUpdate = true; n.settled = true; }
+        continue;
+      }
+      n.t += dt;
+      const decay = Math.exp(-n.t * 1.5);   // качается заметно дольше вспышки гола
       for (let i = 0; i < pos.count; i++) {
         const x = n.base[i * 3], y = n.base[i * 3 + 1];
         // края сетки пришиты к раме и не двигаются
         const edge = Math.min(1, (n.halfW - Math.abs(x)) / (n.halfW * 0.45))
                    * Math.min(1, (n.height / 2 - Math.abs(y)) / (n.height * 0.3));
         const d = Math.hypot(x - n.ix, y - n.iy);
-        const wave = Math.sin(n.t * 13 - d * 5) * Math.exp(-d * 1.6);
+        const wave = Math.sin(n.t * 9 - d * 4) * Math.exp(-d * 1.1);
         pos.array[i * 3 + 2] = n.base[i * 3 + 2] + n.amp * decay * wave * Math.max(0, edge);
       }
       pos.needsUpdate = true;

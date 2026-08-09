@@ -125,8 +125,10 @@ function fitMenuStage() {
 }
 
 // Допустимый диапазон камеры: у ближней бровки не выходим за пределы поля.
-function camClamp(x) {
-  const half = VIS_NEAR / 2;
+// wide=true — празднование: камере разрешено доехать вплотную к воротам,
+// иначе она встаёт в 15 м от них и сетка остаётся у самого края кадра.
+function camClamp(x, wide) {
+  const half = wide ? 120 : VIS_NEAR / 2;
   return clamp(x, half, PITCH_L - half);
 }
 
@@ -1334,7 +1336,7 @@ function step(dt) {
 function followCamera(dt) {
   // Камера едет за мячом по длине и мягко следует по ширине: площадка Rush
   // слишком велика, чтобы держать её в кадре целиком.
-  const target = camClamp(ball.x);
+  const target = camClamp(ball.x, celebrate > 0);
   camX += (target - camX) * Math.min(1, 2.6 * dt);
   const tz = clamp(ball.z, PITCH_W * 0.12, PITCH_W * 0.88);
   camZ += (tz - camZ) * Math.min(1, 2.0 * dt);
@@ -1567,8 +1569,8 @@ function updateOverlays() {
     if (subText) el.cineSub.textContent = subText;
   }
   if (el.flash) {
-    if (celebrate > CELEBRATE_TIME - 1.2) {
-      el.flash.style.opacity = String(Math.min(0.5, (celebrate - (CELEBRATE_TIME - 1.2)) * 0.45));
+    if (celebrate > CELEBRATE_TIME - 0.8) {
+      el.flash.style.opacity = String(Math.min(0.28, (celebrate - (CELEBRATE_TIME - 0.8)) * 0.35));
       el.flash.style.background = lastGoal === "you" ? "#ffe14d" : "#ff8f6b";
     } else el.flash.style.opacity = "0";
   }
