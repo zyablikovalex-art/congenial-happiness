@@ -2,7 +2,8 @@
 // Strategy: network-first (so a new deploy is always picked up when online),
 // with the cache used only as an offline fallback. This avoids users getting
 // stuck on a stale cached version after an update.
-const CACHE = "mini-football-v53";
+// Номер держать равным APP_VERSION в game.js — он же показан в меню.
+const CACHE = "mini-football-v54";
 const ASSETS = [
   "./",
   "./index.html",

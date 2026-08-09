@@ -1,5 +1,10 @@
 "use strict";
 
+/* Версия сборки. Увеличивается на каждый релиз и показывается в углу меню.
+   Держать её и CACHE в sw.js одним и тем же числом: по нему же обновляется
+   офлайновый кэш, иначе игрок увидит новый номер поверх старых файлов. */
+const APP_VERSION = 54;
+
 /* =========================================================================
    Футбол 11 на 11 — 3D (Three.js), альбомная ориентация.
    Этот файл — только СИМУЛЯЦИЯ (мир, физика, ИИ, ввод) в мировых координатах
@@ -225,6 +230,7 @@ const el = {
   mTasks: document.getElementById("mTasks"),
   mCards: document.getElementById("mCards"),
   mLen: document.getElementById("mLen"),
+  mVersion: document.getElementById("mVersion"),
   freezeOpp: document.getElementById("freezeOpp"),
   trainBadge: document.getElementById("trainBadge"),
   netLenRow: document.getElementById("netLenRow"),
@@ -1775,6 +1781,7 @@ if (el.mBack) el.mBack.addEventListener("click", (e) => {
 if (el.mTasks) el.mTasks.addEventListener("click", () => { hideMenu(); startMatch(); });
 
 renderTasks();
+if (el.mVersion) el.mVersion.textContent = "v" + APP_VERSION;
 
 /* =========================================================================
    Потоки: меню / матч / итог

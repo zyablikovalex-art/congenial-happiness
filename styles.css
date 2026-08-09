@@ -559,6 +559,18 @@ html, body {
 .mcard-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 16px; }
 .mcard-reward { font-family: Unbounded, sans-serif; font-weight: 700; font-size: 14px; color: #E9BE5C; }
 .mcard-cta { font-size: 12px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
+/* Версия сборки — незаметная подпись в углу меню */
+.mversion {
+  position: absolute;
+  right: 26px; bottom: 18px;
+  z-index: 5;
+  font-size: 12px; font-weight: 700; letter-spacing: 0.16em;
+  color: rgba(255, 255, 255, 0.3);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+  user-select: none;
+}
+
 .mhint {
   padding: 0 76px; display: flex; align-items: center; gap: 12px;
   font-size: 12px; font-weight: 700; letter-spacing: 0.14em;
