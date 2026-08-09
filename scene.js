@@ -295,6 +295,7 @@ window.Scene3D = (function () {
   function makePlayer(team, isGK) {
     const kit = isGK ? COL.gk[team] : COL.team[team];
     const g = new T.Group();
+    g.rotation.order = "YXZ";   // сперва разворот по Y, потом наклон по X
     const parts = {};
 
     const HIP = 0.72, THIGH = 0.36, SHIN = 0.34, TORSO = 0.52;
@@ -653,6 +654,26 @@ window.Scene3D = (function () {
     while (d > Math.PI) d -= Math.PI * 2;
     while (d < -Math.PI) d += Math.PI * 2;
     g.rotation.y += d * 0.25;
+
+    // Бросок вратаря: тело валится вперёд по направлению прыжка и
+    // отрывается от земли, руки вытянуты. Разворот уже смотрит туда же.
+    const dive = p.dive;
+    if (dive) {
+      const air = Math.min(1, dive.t / 0.5);
+      g.rotation.x = lerp(g.rotation.x, 1.35, 0.35);
+      g.position.y = Math.sin(Math.min(1, dive.t / 0.55) * Math.PI) * 0.42;
+      parts.armL.rotation.x = lerp(parts.armL.rotation.x, -2.3, 0.3);
+      parts.armR.rotation.x = lerp(parts.armR.rotation.x, -2.3, 0.3);
+      parts.armL.rotation.z = lerp(parts.armL.rotation.z, 0.18, 0.3);
+      parts.armR.rotation.z = lerp(parts.armR.rotation.z, -0.18, 0.3);
+      parts.legL.rotation.x = lerp(parts.legL.rotation.x, 0.25, 0.3);
+      parts.legR.rotation.x = lerp(parts.legR.rotation.x, -0.1, 0.3);
+      parts.kneeL.rotation.x = lerp(parts.kneeL.rotation.x, 0.15, 0.3);
+      parts.kneeR.rotation.x = lerp(parts.kneeR.rotation.x, 0.15, 0.3);
+      parts.ring.visible = false;
+      return;
+    }
+    g.rotation.x = lerp(g.rotation.x, 0, 0.2);   // после броска встаём
 
     const ph = p.runPhase;
     if (cheering) {

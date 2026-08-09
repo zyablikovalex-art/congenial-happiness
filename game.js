@@ -3,7 +3,7 @@
 /* Версия сборки. Увеличивается на каждый релиз и показывается в углу меню.
    Держать её и CACHE в sw.js одним и тем же числом: по нему же обновляется
    офлайновый кэш, иначе игрок увидит новый номер поверх старых файлов. */
-const APP_VERSION = 56;
+const APP_VERSION = 57;
 
 /* =========================================================================
    Футбол 11 на 11 — 3D (Three.js), альбомная ориентация.
@@ -71,6 +71,12 @@ const PHYSICS = window.PHYSICS;
 let SPEED = PHYSICS.SPEED;
 let SPRINT = PHYSICS.SPRINT;
 let GK_SPEED = PHYSICS.GK_SPEED;
+let GK_OUT_MAX = PHYSICS.GK_OUT_MAX;
+let GK_RUSH_R = PHYSICS.GK_RUSH_R;
+let GK_DIVE_SPEED = PHYSICS.GK_DIVE_SPEED;
+let GK_REACH = PHYSICS.GK_REACH;
+const GK_DIVE_TIME = 0.5;    // сколько длится сам бросок
+const GK_GETUP_TIME = 0.55;  // и сколько вратарь поднимается после него
 let ACCEL = PHYSICS.ACCEL;
 let CTRL_R = PHYSICS.CTRL_R;
 let TACKLE_R = PHYSICS.TACKLE_R;
@@ -329,6 +335,13 @@ const PHYS_GROUPS = [
     { k: "SPRINT", label: "Спринт",        min: 60, max: 320, step: 2, get: () => SPRINT, set: (v) => SPRINT = v },
     { k: "ACCEL",  label: "Ускорение (отклик)", min: 300, max: 4000, step: 50, get: () => ACCEL, set: (v) => ACCEL = v },
     { k: "GK_SPEED", label: "Скорость вратаря", min: 40, max: 220, step: 2, get: () => GK_SPEED, set: (v) => GK_SPEED = v },
+  ]},
+  { title: "Вратарь", items: [
+    { k: "GK_SPEED", label: "Скорость", min: 60, max: 400, step: 2, get: () => GK_SPEED, set: (v) => GK_SPEED = v },
+    { k: "GK_OUT_MAX", label: "Максимальный выход", min: 40, max: 700, step: 10, get: () => GK_OUT_MAX, set: (v) => GK_OUT_MAX = v },
+    { k: "GK_RUSH_R", label: "Дистанция выхода на мяч", min: 100, max: 1200, step: 10, get: () => GK_RUSH_R, set: (v) => GK_RUSH_R = v },
+    { k: "GK_DIVE_SPEED", label: "Скорость броска", min: 200, max: 1200, step: 10, get: () => GK_DIVE_SPEED, set: (v) => GK_DIVE_SPEED = v },
+    { k: "GK_REACH", label: "Радиус приёма мяча", min: 30, max: 220, step: 5, get: () => GK_REACH, set: (v) => GK_REACH = v },
   ]},
   { title: "Мяч", items: [
     { k: "GRAV",   label: "Гравитация",    min: 200, max: 1400, step: 20, get: () => GRAV,   set: (v) => GRAV = v },
@@ -998,14 +1011,17 @@ function resolvePossession(dt) {
         }
       }
     }
-  } else if (ball.cooldown <= 0 && ball.h < 24) {
-    // Свободный мяч у земли — ближайший в радиусе получает контроль
-    // (высоко летящий навес не «ловится» из-под ног).
-    let best = null, bd = CTRL_R;
+  } else if (ball.cooldown <= 0) {
+    // Свободный мяч подбирает ближайший, кто до него дотягивается.
+    // Полевой берёт только из-под ног, вратарь — руками, дальше и выше.
+    let best = null, bd = 1e9;
     for (const p of players) {
       if (isFrozen(p)) continue;   // замороженные не подбирают мяч
+      const r = p.isGK ? GK_REACH : CTRL_R;
+      const maxH = p.isGK ? GOAL_DEPTH_H : 24;
+      if (ball.h > maxH) continue;
       const d = dist(p, ball);
-      if (d < bd) { bd = d; best = p; }
+      if (d < r && d < bd) { bd = d; best = p; }
     }
     if (best) { ball.owner = best; ball.lastTeam = best.team; ball.lastTouch = best; }
   }
@@ -1039,6 +1055,14 @@ let chaser = [null, null];
 let chaser2 = [null, null];
 
 function aiWithBall(p, dt) {
+  // Вратарь мяч не ведёт: подержал и выбил вперёд.
+  if (p.isGK) {
+    p.holdT = (p.holdT || 0) + dt;
+    p.dirx = p.team === 0 ? 1 : -1; p.dirz = 0;
+    moveTo(p, p.home.x, p.home.z, GK_SPEED * 0.6, dt);
+    if (p.holdT > 0.8) { p.holdT = 0; doLob(p, 0.75); }
+    return;
+  }
   const oppGoalX = p.team === 0 ? PITCH_L : 0;
   const attackDir = p.team === 0 ? 1 : -1;
   const distGoal = Math.abs(oppGoalX - p.x);
@@ -1052,19 +1076,108 @@ function aiWithBall(p, dt) {
   moveTo(p, oppGoalX, tz, SPEED * 0.98, dt);
 }
 
+/* =========================================================================
+   Вратарь. Три поведения по приоритету:
+     1) бросок — мяч летит в створ и рукой до него не достать стоя;
+     2) выход — свободный мяч или соперник с мячом близко к воротам;
+     3) позиция — на биссектрисе «мяч — центр ворот», тем дальше от линии,
+        чем ближе мяч: так закрывается угол обстрела.
+   ========================================================================= */
+
+// Куда и когда мяч пересечёт линию ворот, если никто не вмешается.
+// Считаем тем же шагом, что и симуляция, только вперёд по времени.
+function predictBallAtGoal(goalX, maxT) {
+  if (ball.owner) return null;
+  const toward = goalX === 0 ? ball.vx < -60 : ball.vx > 60;
+  if (!toward) return null;
+  let x = ball.x, z = ball.z, h = ball.h;
+  let vx = ball.vx, vz = ball.vz, vh = ball.vh, t = 0;
+  const dt = 1 / 120;
+  while (t < maxT) {
+    x += vx * dt; z += vz * dt; h += vh * dt; vh -= GRAV * dt;
+    if (h <= 0) { h = 0; if (vh < 0) vh = -vh * BOUNCE; }
+    const fr = Math.exp(-(h > 0 ? AIR_FRICTION : GROUND_FRICTION) * dt);
+    vx *= fr; vz *= fr;
+    t += dt;
+    if (goalX === 0 ? x <= 0 : x >= PITCH_L) return { t, z, h };
+  }
+  return null;
+}
+
+function gkControl(p, dt) {
+  const ownGoalX = p.team === 0 ? 0 : PITCH_L;
+  const attackDir = p.team === 0 ? 1 : -1;
+
+  // --- бросок в процессе: летим по инерции, рулить нельзя ---
+  if (p.dive) {
+    p.dive.t += dt;
+    if (p.dive.t < GK_DIVE_TIME) {
+      p.vx = p.dive.x * GK_DIVE_SPEED;
+      p.vz = p.dive.z * GK_DIVE_SPEED;
+      p.x += p.vx * dt; p.z += p.vz * dt;
+      clampInsideBoards(p, PLR_R);
+    } else {
+      p.vx *= 0.1; p.vz *= 0.1;   // упал и встаёт
+      if (p.dive.t > GK_DIVE_TIME + GK_GETUP_TIME) p.dive = null;
+    }
+    return;
+  }
+
+  const dGoal = hyp(ball.x - ownGoalX, ball.z - PITCH_W / 2);
+
+  // --- решение о броске ---
+  const pred = predictBallAtGoal(ownGoalX, 1.3);
+  if (pred && pred.t > 0.06 && pred.h < GOAL_DEPTH_H + 40 &&
+      pred.z > MOUTH_LO - 80 && pred.z < MOUTH_HI + 80) {
+    const gap = Math.abs(pred.z - p.z);
+    // Не мгновенный разгон: реально успевает меньше, чем скорость × время.
+    const canWalk = GK_SPEED * pred.t * 0.7 + GK_REACH;
+    if (gap > canWalk * 0.85) {
+      const dz = pred.z - p.z;
+      const dx = (ownGoalX + attackDir * 20) - p.x;
+      const m = hyp(dx, dz) || 1;
+      p.dive = { t: 0, x: dx / m, z: dz / m };
+      p.dirx = dx / m; p.dirz = dz / m;
+      return;
+    }
+  }
+
+  // --- выход на мяч ---
+  const freeNear = !ball.owner && dGoal < GK_RUSH_R && ball.h < 90;
+  const threat = ball.owner && ball.owner.team !== p.team && dGoal < GK_RUSH_R * 0.55;
+  if (freeNear || threat) {
+    // выбегаем только если мяч реально ближе к нам, чем к чужим
+    let oppCloser = false;
+    for (const o of players) {
+      if (o.team === p.team || o.isGK) continue;
+      if (dist(o, ball) < dist(p, ball) - 20) { oppCloser = true; break; }
+    }
+    if (!oppCloser || threat) {
+      moveTo(p, ball.x, ball.z, GK_SPEED * 1.45, dt);
+      return;
+    }
+  }
+
+  // --- позиция: на линии «мяч — центр ворот», выход тем больше, чем ближе мяч ---
+  const gx = ownGoalX, gz = PITCH_W / 2;
+  let vx = ball.x - gx, vz = ball.z - gz;
+  const vm = hyp(vx, vz) || 1; vx /= vm; vz /= vm;
+  const near = clamp((GK_RUSH_R * 3 - dGoal) / (GK_RUSH_R * 3 - GK_RUSH_R * 0.8), 0, 1);
+  const out = 30 + near * (GK_OUT_MAX - 30);
+  const tx = gx + vx * out;
+  // По ширине одной биссектрисы мало: стоя у линии, вратарь смещался бы на
+  // считанные сантиметры. Подмешиваем прямое слежение за мячом.
+  const track = 0.35 + 0.4 * near;
+  const tz = clamp(gz + (ball.z - gz) * track, MOUTH_LO - 70, MOUTH_HI + 70);
+  moveTo(p, tx, tz, GK_SPEED, dt);
+}
+
 function aiControl(p, dt) {
   const team = p.team;
   const attackDir = team === 0 ? 1 : -1;
   const ownGoalX = team === 0 ? 0 : PITCH_L;
 
-  if (p.isGK) {
-    const tx = ownGoalX + attackDir * 40;
-    const tz = clamp(ball.z, MOUTH_LO + 8, MOUTH_HI - 8);
-    // выходит чуть вперёд, если мяч близко к воротам
-    const rush = Math.abs(ball.x - ownGoalX) < 320 ? attackDir * 70 : 0;
-    moveTo(p, tx + rush, tz, GK_SPEED, dt);
-    return;
-  }
+  if (p.isGK) { gkControl(p, dt); return; }
 
   const teamHasBall = ball.owner && ball.owner.team === team;
 
@@ -1168,6 +1281,7 @@ function kickoffReset(kickTeam) {
   for (const p of players) {
     p.x = p.home.x; p.z = p.home.z; p.vx = 0; p.vz = 0;
     p.dirx = p.team === 0 ? 1 : -1; p.dirz = 0;
+    p.dive = null; p.holdT = 0;
   }
   ball.x = PITCH_L / 2; ball.z = PITCH_W / 2; ball.h = 0;
   ball.vx = 0; ball.vz = 0; ball.vh = 0; ball.owner = null; ball.cooldown = 0.25;

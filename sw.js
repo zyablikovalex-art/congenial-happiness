@@ -3,7 +3,7 @@
 // with the cache used only as an offline fallback. This avoids users getting
 // stuck on a stale cached version after an update.
 // Номер держать равным APP_VERSION в game.js — он же показан в меню.
-const CACHE = "mini-football-v56";
+const CACHE = "mini-football-v57";
 const ASSETS = [
   "./",
   "./index.html",
