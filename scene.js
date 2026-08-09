@@ -463,13 +463,14 @@ window.Scene3D = (function () {
 
   /* Удар мяча в сетку: запоминаем точку попадания в локальных координатах
      задней стенки, дальше каждый кадр гоняем по ней затухающую волну. */
-  function hitNet(side, worldZ, worldH) {
+  function hitNet(side, worldZ, worldH, power) {
     const n = nets.find((x) => x.side === side);
     if (!n) return;
     n.ix = (worldZ - W / 2) * S * (side === 0 ? 1 : -1);
     n.iy = Math.min(n.height, Math.max(0, worldH * S)) - n.height / 2;
     n.t = 0;
-    n.amp = 0.9;            // провал сетки около полуметра — заметно, но в раму влезает
+    // Провал до полуметра на сильном ударе, лёгкая рябь на слабом.
+    n.amp = 0.28 + 0.72 * Math.min(1, power == null ? 1 : power);
     n.settled = false;
   }
 
@@ -724,10 +725,11 @@ window.Scene3D = (function () {
     // Салюты во время заставки
     updateFireworks(dt, (gs.state === "intro" && gs.introActive) || !!gs.celebrating);
     updateNets(dt);
-    // Гол: качнуть сетку той стороны, куда он забит (номер гола не повторяется)
-    if (gs.goalSeq && gs.goalSeq !== lastGoalSeq) {
-      lastGoalSeq = gs.goalSeq;
-      if (gs.goalAt) hitNet(gs.goalAt.side, gs.goalAt.z, gs.goalAt.h);
+    // Мяч ударил в заднюю сетку — качнуть её. Счётчик растёт на каждое
+    // касание, поэтому отыгрываются и повторные удары внутри ворот.
+    if (gs.netHitSeq && gs.netHitSeq !== lastGoalSeq) {
+      lastGoalSeq = gs.netHitSeq;
+      if (gs.netHitAt) hitNet(gs.netHitAt.side, gs.netHitAt.z, gs.netHitAt.h, gs.netHitAt.power);
     }
 
     // Камера: угол к горизонту и высота задаются настройками, дистанция

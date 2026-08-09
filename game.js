@@ -3,7 +3,7 @@
 /* Версия сборки. Увеличивается на каждый релиз и показывается в углу меню.
    Держать её и CACHE в sw.js одним и тем же числом: по нему же обновляется
    офлайновый кэш, иначе игрок увидит новый номер поверх старых файлов. */
-const APP_VERSION = 54;
+const APP_VERSION = 55;
 
 /* =========================================================================
    Футбол 11 на 11 — 3D (Three.js), альбомная ориентация.
@@ -189,6 +189,9 @@ let celebrateTeam = 0;       // кто забил — у них подняты �
 let pendingKick = 0;         // кто начнёт с центра, когда празднование кончится
 let goalSeq = 0;             // номер гола: по нему сцена качает сетку один раз
 let goalAt = null;           // где мяч пересёк линию
+let scorer = null;           // кто забил — на нём держится камера в празднование
+let netHitSeq = 0;           // счётчик касаний задней сетки
+let netHitAt = null;         // где и с какой силой мяч попал в сетку
 let lastGoal = null;
 let restartMsg = "", restartMsgT = 0; // подпись типа возобновления игры
 // Режим: 'ai' — соперник под управлением ИИ (как было); 'host' — мы считаем
@@ -773,7 +776,7 @@ function anyOpponentWithin(p, r) {
 
 // Нанести удар/пас: мяч становится свободным.
 function kick(power, dx, dz, loft) {
-  if (ball.owner) ball.lastTeam = ball.owner.team; // кто последним коснулся
+  if (ball.owner) { ball.lastTeam = ball.owner.team; ball.lastTouch = ball.owner; }
   ball.owner = null;
   ball.cooldown = 0.2;
   ball.vx = dx * power;
@@ -880,9 +883,9 @@ function doTackle(p) {
   p.vx += dx / d * 90; p.vz += dz / d * 90; // рывок делает отбор отзывчивым
   if (d < TACKLE_STEAL_R) {
     if (ball.owner && ball.owner.team !== p.team) {
-      ball.owner = p; ball.lastTeam = p.team; ball.cooldown = 0.05; // отбор у соперника
+      ball.owner = p; ball.lastTeam = p.team; ball.lastTouch = p; ball.cooldown = 0.05; // отбор
     } else if (!ball.owner) {
-      ball.owner = p; ball.lastTeam = p.team; ball.cooldown = 0;     // перехват свободного мяча
+      ball.owner = p; ball.lastTeam = p.team; ball.lastTouch = p; ball.cooldown = 0;     // перехват
     }
   }
 }
@@ -990,7 +993,7 @@ function resolvePossession(dt) {
       // Ручной отбор (doTackle) и так считает по мячу — теперь одинаково.
       if (dist(o, ball) < TACKLE_R) {
         if (nrand(F * 1.7 + o.id * 3.1) < STEAL_RATE * dt) {
-          ball.owner = o; ball.lastTeam = o.team; ball.cooldown = 0.05;
+          ball.owner = o; ball.lastTeam = o.team; ball.lastTouch = o; ball.cooldown = 0.05;
           break;
         }
       }
@@ -1004,7 +1007,7 @@ function resolvePossession(dt) {
       const d = dist(p, ball);
       if (d < bd) { bd = d; best = p; }
     }
-    if (best) { ball.owner = best; ball.lastTeam = best.team; }
+    if (best) { ball.owner = best; ball.lastTeam = best.team; ball.lastTouch = best; }
   }
 }
 
@@ -1191,6 +1194,7 @@ function scoreGoal(who) {
   pendingKick = who === "you" ? 1 : 0;   // начинает пропустившая
   goalSeq++;
   goalAt = { side: ball.x <= PITCH_L / 2 ? 0 : 1, z: ball.z, h: ball.h };
+  scorer = ball.lastTouch || activeOf[celebrateTeam];
   celebrate = CELEBRATE_TIME;
   ball.owner = null;   // скорость НЕ гасим: мяч должен влететь в сетку
   resetCharge();
@@ -1223,13 +1227,19 @@ function updateBallInNet(dt) {
   // Сетка гасит почти всё: мяч должен остаться лежать в воротах, а не
   // выскочить обратно на площадку и замереть на линии створа.
   const NET_ABSORB = -0.06;
-  if (right) {
-    if (ball.x > back) { ball.x = back; ball.vx *= NET_ABSORB; }
-    if (ball.x < line + BALL_R) { ball.x = line + BALL_R; ball.vx *= NET_ABSORB; }
-  } else {
-    if (ball.x < back) { ball.x = back; ball.vx *= NET_ABSORB; }
-    if (ball.x > line - BALL_R) { ball.x = line - BALL_R; ball.vx *= NET_ABSORB; }
+  const hitBack = right ? ball.x > back : ball.x < back;
+  if (hitBack) {
+    const speed = Math.abs(ball.vx);
+    ball.x = back; ball.vx *= NET_ABSORB;
+    // Волну пускаем именно здесь: мяч долетает до задней сетки на 1.6 м позже,
+    // чем пересекает линию ворот, и качать её раньше — значит качать впустую.
+    if (speed > 60) {
+      netHitSeq++;
+      netHitAt = { side: right ? 1 : 0, z: ball.z, h: ball.h, power: Math.min(1, speed / 900) };
+    }
   }
+  if (right) { if (ball.x < line + BALL_R) { ball.x = line + BALL_R; ball.vx *= NET_ABSORB; } }
+  else { if (ball.x > line - BALL_R) { ball.x = line - BALL_R; ball.vx *= NET_ABSORB; } }
   const zLo = MOUTH_LO + BALL_R, zHi = MOUTH_HI - BALL_R;
   if (ball.z < zLo) { ball.z = zLo; ball.vz *= NET_ABSORB; }
   else if (ball.z > zHi) { ball.z = zHi; ball.vz *= NET_ABSORB; }
@@ -1243,9 +1253,13 @@ function stepCelebrate(dt) {
     if (p === activeOf[myTeam] && isHumanTeam(myTeam)) { userMove(p, dt); continue; }
     if (p.isGK) { moveTo(p, p.home.x, p.home.z, GK_SPEED * 0.5, dt); continue; }
     if (p.team === celebrateTeam) {
-      const tx = goalAt && goalAt.side === 0 ? PITCH_L * 0.18 : PITCH_L * 0.82;
-      const tz = PITCH_W / 2 + (p.id % 2 ? 1 : -1) * (90 + (p.id % 3) * 70);
-      moveTo(p, tx, tz, SPEED * 0.8, dt);
+      // Убегают ОТ ворот к ближней бровке, а не толпятся в сетке: камера
+      // держится на авторе гола, и упираться ей в сетку незачем.
+      const side = goalAt && goalAt.side === 1 ? 1 : 0;
+      const cx = PITCH_L * (side === 1 ? 0.70 : 0.30);
+      const cz = PITCH_W * 0.24;
+      if (p === scorer) moveTo(p, cx, cz, SPEED * 0.9, dt);
+      else moveTo(p, scorer ? scorer.x : cx, (scorer ? scorer.z : cz) + (p.id % 2 ? 80 : -80), SPEED * 0.8, dt);
     } else {
       moveTo(p, p.home.x, p.home.z, SPEED * 0.5, dt);
     }
@@ -1359,9 +1373,11 @@ function step(dt) {
 function followCamera(dt) {
   // Камера едет за мячом по длине и мягко следует по ширине: площадка Rush
   // слишком велика, чтобы держать её в кадре целиком.
-  const target = camClamp(ball.x, celebrate > 0);
+  // В празднование камера ведёт автора гола, а не мяч в сетке.
+  const focus = (celebrate > 0 && scorer) ? scorer : ball;
+  const target = camClamp(focus.x, celebrate > 0);
   camX += (target - camX) * Math.min(1, 2.6 * dt);
-  const tz = clamp(ball.z, PITCH_W * 0.12, PITCH_W * 0.88);
+  const tz = clamp(focus.z, PITCH_W * 0.12, PITCH_W * 0.88);
   camZ += (tz - camZ) * Math.min(1, 2.0 * dt);
 }
 
@@ -1559,7 +1575,7 @@ function draw(dt) {
   Scene3D.render({
     players, ball, camX, camZ, active, state,
     introActive: state === "intro" && introT < INTRO_END - 0.1,
-    celebrating: celebrate > 0, celebrateTeam, goalSeq, goalAt,
+    celebrating: celebrate > 0, celebrateTeam, netHitSeq, netHitAt,
   }, dt || 0);
   updateOverlays();
 }
@@ -1788,7 +1804,7 @@ if (el.mVersion) el.mVersion.textContent = "v" + APP_VERSION;
    ========================================================================= */
 function startMatch() {
   scoreYou = 0; scoreCpu = 0; timeLeft = MATCH_SECONDS; celebrate = 0; F = 0;
-  goalAt = null;
+  goalAt = null; scorer = null; netHitAt = null;
   updateScoreHud();
   const mm = Math.floor(MATCH_SECONDS / 60), ss = MATCH_SECONDS % 60;
   el.clock.textContent = `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
