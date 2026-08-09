@@ -3,7 +3,7 @@
 /* Версия сборки. Увеличивается на каждый релиз и показывается в углу меню.
    Держать её и CACHE в sw.js одним и тем же числом: по нему же обновляется
    офлайновый кэш, иначе игрок увидит новый номер поверх старых файлов. */
-const APP_VERSION = 57;
+const APP_VERSION = 58;
 
 /* =========================================================================
    Футбол 11 на 11 — 3D (Three.js), альбомная ориентация.
@@ -799,11 +799,35 @@ function kick(power, dx, dz, loft) {
 }
 
 // f — доля усилия [0..1]. Для ИИ по умолчанию берём среднюю силу.
+/* Удар. Прицел по створу задаётся боковой составляющей ввода: держишь
+   джойстик к дальней бровке — бьёшь в дальний угол. Раньше здесь стояла
+   константа «центр ворот», поэтому все удары шли в одну точку — ровно туда,
+   где стоит вратарь. Без ввода (и у ИИ) целимся в дальний от вратаря угол.
+   Точность падает с силой: пушечный удар уходит от прицела заметнее. */
+function shotAimZ(p) {
+  const inner = GOAL_HALF * 0.8;                 // полный прицел — не в штангу, а рядом с ней
+  const iv = inputVectorFor(p);
+  let aim;
+  if (Math.abs(iv.z) > 0.25) {
+    aim = clamp(iv.z, -1, 1);
+  } else {
+    const gk = players.find((g) => g.isGK && g.team !== p.team);
+    const off = gk ? (gk.z - PITCH_W / 2) / GOAL_HALF : 0;
+    aim = clamp(-off, -1, 1);
+    // вратарь по центру — выбираем угол, а не бьём ему в руки
+    if (Math.abs(aim) < 0.3) aim = (nrand(F * 0.7 + p.id * 3.3) < 0.5 ? -1 : 1) * 0.7;
+  }
+  return PITCH_W / 2 + aim * inner;
+}
+
 function doShoot(p, f) {
   if (!p || ball.owner !== p) return;
   if (f == null) f = 0.85;
   const goalX = p.team === 0 ? PITCH_L : 0;
-  const targetZ = PITCH_W / 2;
+  // Разброс растёт с силой: на средней силе удар точный, на полной может уйти
+  // мимо штанги — иначе каждый удар был бы в створ.
+  const spread = (nrand(F * 1.9 + p.id * 7.1) - 0.5) * GOAL_HALF * 0.45 * f;
+  const targetZ = shotAimZ(p) + spread;
   const dx = goalX - p.x, dz = targetZ - p.z, d = hyp(dx, dz) || 1;
   const speed = SHOT_MIN + f * (SHOT_MAX - SHOT_MIN);
   const loft = SHOT_MIN_LOFT + f * f * (SHOT_MAX_LOFT - SHOT_MIN_LOFT);
