@@ -38,6 +38,7 @@ window.Scene3D = (function () {
   let groundHalfX, groundHalfZ; // половина размера газона в единицах сцены
   let ballMesh, ballGroup;
   let camLookY = CAM_LOOK_INTRO;   // сглаженная высота точки взгляда
+  let lastGoalSeq = 0;             // какой по счёту гол уже отыгран сеткой
   const playerMeshes = []; // индекс = id игрока
   let sceneTime = 0;
 
@@ -249,7 +250,7 @@ window.Scene3D = (function () {
     return (141 + t * t * (234 - 141)) * S;   // «3 м» по бокам, «5 м» за воротами
   }
   function makeFence() {
-    const geo = wallStrip(boxOutline(0, 14, 6), () => BOARD_H * S, fenceTopY, { tile: 47 });
+    const geo = wallStrip(boxOutline(0, 14, 6), () => BOARD_H * S, fenceTopY, { tile: 47, skipMouth: true });
     return new T.Mesh(geo, new T.MeshBasicMaterial({
       map: fenceTexture(), transparent: true, opacity: 0.5,
       side: T.DoubleSide, depthWrite: false,
@@ -367,30 +368,129 @@ window.Scene3D = (function () {
   }
 
   // ---- Ворота ----
+  // Рама выражённая и целиком уходит за линию, наружу коробки: спереди только
+  // стойки с перекладиной, всё остальное — сзади. Сетка натянута по раме,
+  // задняя стенка деформируемая, чтобы колыхаться от удара.
+  function netTexture() {
+    const c = document.createElement("canvas");
+    c.width = c.height = 64;
+    const g = c.getContext("2d");
+    g.strokeStyle = "rgba(255,255,255,0.95)";
+    g.lineWidth = 3;
+    for (let i = 0; i <= 4; i++) {
+      const t = i * 16;
+      g.beginPath(); g.moveTo(t, -2); g.lineTo(t, 66); g.stroke();
+      g.beginPath(); g.moveTo(-2, t); g.lineTo(66, t); g.stroke();
+    }
+    const t = new T.CanvasTexture(c);
+    t.wrapS = t.wrapT = T.RepeatWrapping;
+    return t;
+  }
+
+  const nets = [];   // задние стенки сеток: их вершины колышутся от удара
+
   function makeGoal(gx, faceIn) {
     const grp = new T.Group();
-    const white = mat(0xffffff, 0.5);
+    const frameMat = new T.MeshStandardMaterial({ color: 0xf2f5f8, roughness: 0.45, metalness: 0.1 });
     const zLo = (MOUTH_LO - W / 2) * S, zHi = (MOUTH_HI - W / 2) * S;
-    // Ворота выступают за пределы коробки: сетка позади линии, а не на поле.
-    const H = GOAL_H * S, R = 0.06, depth = -0.8 * faceIn;
+    const mouth = zHi - zLo, midZ = (zLo + zHi) / 2;
+    const H = GOAL_H * S;
+    const R = 0.075;                 // рама заметно толще прежней
+    const depth = -1.5 * faceIn;     // вся конструкция за линией, вне коробки
     const tx = (gx - L / 2) * S;
-    // стойки
+    const bx = tx + depth;           // задняя плоскость
+
+    const tube = (len, axis, x, y, z, r) => {
+      const m = new T.Mesh(new T.CylinderGeometry(r || R, r || R, len, 10), frameMat);
+      if (axis === "z") m.rotation.x = Math.PI / 2;
+      if (axis === "x") m.rotation.z = Math.PI / 2;
+      m.position.set(x, y, z);
+      grp.add(m);
+      return m;
+    };
+
+    // Передняя рама: стойки и перекладина стоят точно на линии ворот
+    tube(H, "y", tx, H / 2, zLo);
+    tube(H, "y", tx, H / 2, zHi);
+    tube(mouth + R * 2, "z", tx, H, midZ);
+    // Задняя рама
+    const bh = H * 0.62;                                   // сзади ворота ниже
+    tube(bh, "y", bx, bh / 2, zLo, R * 0.7);
+    tube(bh, "y", bx, bh / 2, zHi, R * 0.7);
+    tube(mouth, "z", bx, bh, midZ, R * 0.7);
+    // Верхние и нижние прогоны, соединяющие переднюю раму с задней
     [zLo, zHi].forEach((z) => {
-      const post = new T.Mesh(new T.CylinderGeometry(R, R, H, 10), white);
-      post.position.set(tx, H / 2, z); grp.add(post);
-      const backPost = new T.Mesh(new T.CylinderGeometry(R * 0.7, R * 0.7, H, 8), white);
-      backPost.position.set(tx + depth, H / 2, z); grp.add(backPost);
+      const run = new T.Mesh(new T.CylinderGeometry(R * 0.6, R * 0.6, Math.hypot(depth, H - bh), 8), frameMat);
+      run.position.set((tx + bx) / 2, (H + bh) / 2, z);
+      run.rotation.z = Math.PI / 2;
+      run.rotation.y = Math.atan2(H - bh, Math.abs(depth)) * (depth > 0 ? -1 : 1);
+      grp.add(run);
+      tube(Math.abs(depth), "x", (tx + bx) / 2, R * 0.5, z, R * 0.6);
     });
-    // перекладина
-    const bar = new T.Mesh(new T.CylinderGeometry(R, R, zHi - zLo, 10), white);
-    bar.rotation.x = Math.PI / 2; bar.position.set(tx, H, (zLo + zHi) / 2); grp.add(bar);
-    // сетка (полупрозрачные плоскости)
-    const netMat = new T.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.12, side: T.DoubleSide });
-    const back = new T.Mesh(new T.PlaneGeometry(zHi - zLo, H), netMat);
-    back.position.set(tx + depth, H / 2, (zLo + zHi) / 2); back.rotation.y = Math.PI / 2; grp.add(back);
-    const top = new T.Mesh(new T.PlaneGeometry(zHi - zLo, Math.abs(depth)), netMat);
-    top.position.set(tx + depth / 2, H, (zLo + zHi) / 2); top.rotation.x = Math.PI / 2; grp.add(top);
+
+    const netMat = new T.MeshBasicMaterial({
+      map: netTexture(), transparent: true, opacity: 0.65,
+      side: T.DoubleSide, depthWrite: false,
+    });
+    netMat.map.repeat.set(mouth * 3, H * 3);
+
+    // Задняя стенка — деформируемая
+    const back = new T.Mesh(new T.PlaneGeometry(mouth, bh, 14, 9), netMat);
+    back.position.set(bx, bh / 2, midZ);
+    back.rotation.y = depth > 0 ? -Math.PI / 2 : Math.PI / 2;
+    grp.add(back);
+    const pos = back.geometry.attributes.position;
+    nets.push({
+      mesh: back, base: Float32Array.from(pos.array),
+      halfW: mouth / 2, height: bh, t: 1e9, ix: 0, iy: 0, amp: 0,
+      side: gx === 0 ? 0 : 1,
+    });
+
+    // Боковины и крыша — обычные плоскости по раме
+    const sideMat = netMat.clone(); sideMat.map = netMat.map; sideMat.opacity = 0.5;
+    [zLo, zHi].forEach((z) => {
+      const side = new T.Mesh(new T.PlaneGeometry(Math.abs(depth), H, 4, 4), sideMat);
+      side.position.set((tx + bx) / 2, H / 2 * 0.9, z);
+      grp.add(side);
+    });
+    const roof = new T.Mesh(new T.PlaneGeometry(mouth, Math.hypot(depth, H - bh), 6, 4), sideMat);
+    roof.position.set((tx + bx) / 2, (H + bh) / 2, midZ);
+    roof.rotation.x = -Math.PI / 2;
+    roof.rotation.z = Math.PI / 2;
+    roof.rotation.y = Math.atan2(H - bh, Math.abs(depth)) * (depth > 0 ? 1 : -1);
+    grp.add(roof);
+
     return grp;
+  }
+
+  /* Удар мяча в сетку: запоминаем точку попадания в локальных координатах
+     задней стенки, дальше каждый кадр гоняем по ней затухающую волну. */
+  function hitNet(side, worldZ, worldH) {
+    const n = nets.find((x) => x.side === side);
+    if (!n) return;
+    n.ix = (worldZ - W / 2) * S * (side === 0 ? 1 : -1);
+    n.iy = Math.min(n.height, Math.max(0, worldH * S)) - n.height / 2;
+    n.t = 0;
+    n.amp = 0.42;
+  }
+
+  function updateNets(dt) {
+    for (const n of nets) {
+      if (n.t > 1.6) continue;
+      n.t += dt;
+      const pos = n.mesh.geometry.attributes.position;
+      const decay = Math.exp(-n.t * 2.6);
+      for (let i = 0; i < pos.count; i++) {
+        const x = n.base[i * 3], y = n.base[i * 3 + 1];
+        // края сетки пришиты к раме и не двигаются
+        const edge = Math.min(1, (n.halfW - Math.abs(x)) / (n.halfW * 0.45))
+                   * Math.min(1, (n.height / 2 - Math.abs(y)) / (n.height * 0.3));
+        const d = Math.hypot(x - n.ix, y - n.iy);
+        const wave = Math.sin(n.t * 13 - d * 5) * Math.exp(-d * 1.6);
+        pos.array[i * 3 + 2] = n.base[i * 3 + 2] + n.amp * decay * wave * Math.max(0, edge);
+      }
+      pos.needsUpdate = true;
+    }
   }
 
   // ---- Калитка в дальнем борту (через неё команды выходят на заставке) ----
@@ -541,7 +641,7 @@ window.Scene3D = (function () {
 
   // ---- Обновление игрока ----
   function lerp(a, b, t) { return a + (b - a) * t; }
-  function updatePlayer(g, p, active, playing) {
+  function updatePlayer(g, p, active, playing, cheering) {
     const parts = g.userData.parts;
     const tx = (p.x - L / 2) * S, tz = (p.z - W / 2) * S;
     g.position.x = tx; g.position.z = tz;
@@ -558,14 +658,27 @@ window.Scene3D = (function () {
     g.rotation.y += d * 0.25;
 
     const ph = p.runPhase;
+    if (cheering) {
+      // Руки вверх: подняты и слегка покачиваются, ноги продолжают бежать
+      const sway = Math.sin(sceneTime * 6 + p.id) * 0.18;
+      parts.armL.rotation.x = lerp(parts.armL.rotation.x, -2.5 + sway, 0.2);
+      parts.armR.rotation.x = lerp(parts.armR.rotation.x, -2.5 - sway, 0.2);
+      parts.armL.rotation.z = lerp(parts.armL.rotation.z, 0.35, 0.2);
+      parts.armR.rotation.z = lerp(parts.armR.rotation.z, -0.35, 0.2);
+    } else {
+      parts.armL.rotation.z = lerp(parts.armL.rotation.z, 0, 0.2);
+      parts.armR.rotation.z = lerp(parts.armR.rotation.z, 0, 0.2);
+    }
     if (moving) {
       const amp = Math.min(1.1, 0.5 + spd / 130);
       parts.legL.rotation.x = Math.sin(ph) * amp;
       parts.legR.rotation.x = Math.sin(ph + Math.PI) * amp;
       parts.kneeL.rotation.x = Math.max(0, -Math.sin(ph)) * 1.2;
       parts.kneeR.rotation.x = Math.max(0, -Math.sin(ph + Math.PI)) * 1.2;
-      parts.armL.rotation.x = Math.sin(ph + Math.PI) * amp * 0.7;
-      parts.armR.rotation.x = Math.sin(ph) * amp * 0.7;
+      if (!cheering) {
+        parts.armL.rotation.x = Math.sin(ph + Math.PI) * amp * 0.7;
+        parts.armR.rotation.x = Math.sin(ph) * amp * 0.7;
+      }
       g.position.y = Math.abs(Math.sin(ph)) * 0.05;
     } else {
       const s = Math.sin(sceneTime * 2 + p.id) * 0.05;
@@ -573,8 +686,10 @@ window.Scene3D = (function () {
       parts.legR.rotation.x = lerp(parts.legR.rotation.x, 0, 0.2);
       parts.kneeL.rotation.x = lerp(parts.kneeL.rotation.x, 0.05, 0.2);
       parts.kneeR.rotation.x = lerp(parts.kneeR.rotation.x, 0.05, 0.2);
-      parts.armL.rotation.x = lerp(parts.armL.rotation.x, s, 0.15);
-      parts.armR.rotation.x = lerp(parts.armR.rotation.x, -s, 0.15);
+      if (!cheering) {
+        parts.armL.rotation.x = lerp(parts.armL.rotation.x, s, 0.15);
+        parts.armR.rotation.x = lerp(parts.armR.rotation.x, -s, 0.15);
+      }
       g.position.y = lerp(g.position.y, 0, 0.2);
     }
     parts.ring.visible = playing && active === p;
@@ -586,7 +701,9 @@ window.Scene3D = (function () {
     sceneTime += dt;
     if (!playerMeshes.length) buildPlayers(gs.players);
 
-    for (const p of gs.players) updatePlayer(playerMeshes[p.id], p, gs.active, gs.state === "playing");
+    for (const p of gs.players)
+      updatePlayer(playerMeshes[p.id], p, gs.active, gs.state === "playing",
+                   gs.celebrating && p.team === gs.celebrateTeam);
 
     // Мяч
     const b = gs.ball;
@@ -601,7 +718,13 @@ window.Scene3D = (function () {
     ballMesh.rotation.z -= b.vx * dt * S * 5;
 
     // Салюты во время заставки
-    updateFireworks(dt, gs.state === "intro" && gs.introActive);
+    updateFireworks(dt, (gs.state === "intro" && gs.introActive) || !!gs.celebrating);
+    updateNets(dt);
+    // Гол: качнуть сетку той стороны, куда он забит (номер гола не повторяется)
+    if (gs.goalSeq && gs.goalSeq !== lastGoalSeq) {
+      lastGoalSeq = gs.goalSeq;
+      if (gs.goalAt) hitNet(gs.goalAt.side, gs.goalAt.z, gs.goalAt.h);
+    }
 
     // Камера: угол к горизонту и высота задаются настройками, дистанция
     // выводится из них (height / tan(angle)). Следит за мячом по X и Z.

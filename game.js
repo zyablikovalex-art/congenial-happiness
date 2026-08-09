@@ -176,6 +176,11 @@ let state = "menu";        // menu | playing | over
 let scoreYou = 0, scoreCpu = 0;
 let timeLeft = MATCH_SECONDS;
 let celebrate = 0;
+const CELEBRATE_TIME = 10;   // секунд празднования после гола
+let celebrateTeam = 0;       // кто забил — у них подняты руки
+let pendingKick = 0;         // кто начнёт с центра, когда празднование кончится
+let goalSeq = 0;             // номер гола: по нему сцена качает сетку один раз
+let goalAt = null;           // где мяч пересёк линию
 let lastGoal = null;
 let restartMsg = "", restartMsgT = 0; // подпись типа возобновления игры
 // Режим: 'ai' — соперник под управлением ИИ (как было); 'host' — мы считаем
@@ -1149,12 +1154,39 @@ function kickoffReset(kickTeam) {
   resetCharge();
 }
 
+/* Гол: розыгрыш не начинается сразу. Даём CELEBRATE_TIME на празднование —
+   игрок бегает своим футболистом, забившая команда держит руки поднятыми,
+   летят салюты, мяч лежит в сетке. Только потом центр поля. */
 function scoreGoal(who) {
   if (who === "you") scoreYou++; else scoreCpu++;
   updateScoreHud();
-  celebrate = 1.3;
   lastGoal = who;
-  kickoffReset(who === "you" ? 1 : 0); // пропустившая команда вводит мяч
+  celebrateTeam = who === "you" ? 0 : 1;
+  pendingKick = who === "you" ? 1 : 0;   // начинает пропустившая
+  goalSeq++;
+  goalAt = { side: ball.x <= PITCH_L / 2 ? 0 : 1, z: ball.z, h: ball.h };
+  celebrate = CELEBRATE_TIME;
+  ball.owner = null; ball.vx = 0; ball.vz = 0; ball.vh = 0;
+  resetCharge();
+}
+
+/* Празднование: мяч не считаем, отборов нет, часы стоят. Забившая команда
+   бежит к воротам, пропустившая возвращается по местам. Активным игроком
+   по-прежнему управляет игрок. */
+function stepCelebrate(dt) {
+  for (const p of players) {
+    if (p === activeOf[myTeam] && isHumanTeam(myTeam)) { userMove(p, dt); continue; }
+    if (p.isGK) { moveTo(p, p.home.x, p.home.z, GK_SPEED * 0.5, dt); continue; }
+    if (p.team === celebrateTeam) {
+      const tx = goalAt && goalAt.side === 0 ? PITCH_L * 0.18 : PITCH_L * 0.82;
+      const tz = PITCH_W / 2 + (p.id % 2 ? 1 : -1) * (90 + (p.id % 3) * 70);
+      moveTo(p, tx, tz, SPEED * 0.8, dt);
+    } else {
+      moveTo(p, p.home.x, p.home.z, SPEED * 0.5, dt);
+    }
+  }
+  separatePlayers();
+  followCamera(dt);
 }
 
 /* =========================================================================
@@ -1171,10 +1203,16 @@ function frame(ts) {
     dt = 0; // сцена рисуется, но матч стоит, пока открыты настройки
   } else if (netMode === "guest") {
     guestFrame(dt); // гость физику не считает — только шлёт ввод и рисует
+  } else if (state === "playing" && celebrate > 0) {
+    // Празднование: часы стоят, физика мяча не считается
+    F++;
+    celebrate -= dt;
+    if (celebrate <= 0) { celebrate = 0; kickoffReset(pendingKick); }
+    else stepCelebrate(dt);
+    if (netMode === "host") maybeSendSnapshot(dt);
   } else if (state === "playing") {
     F++;
     timeLeft -= dt;
-    if (celebrate > 0) celebrate -= dt;
     if (timeLeft <= 0) { timeLeft = 0; endMatch(); }
     else step(dt);
   } else if (state === "intro") {
@@ -1456,6 +1494,7 @@ function draw(dt) {
   Scene3D.render({
     players, ball, camX, camZ, active, state,
     introActive: state === "intro" && introT < INTRO_END - 0.1,
+    celebrating: celebrate > 0, celebrateTeam, goalSeq, goalAt,
   }, dt || 0);
   updateOverlays();
 }
@@ -1471,7 +1510,7 @@ function updateOverlays() {
       bigText = String(Math.max(1, 3 - Math.floor((introT - INTRO_WALK) / stp)));
       bigCls = "cd";
     } else { bigText = "GO!"; bigCls = "go"; }
-  } else if (celebrate > 0) {
+  } else if (celebrate > CELEBRATE_TIME - 2.5) {
     bigText = "ГОЛ!"; bigCls = "goal";
   } else if (state === "playing" && restartMsgT > 0) {
     subText = restartMsg;
@@ -1488,8 +1527,8 @@ function updateOverlays() {
     if (subText) el.cineSub.textContent = subText;
   }
   if (el.flash) {
-    if (celebrate > 0) {
-      el.flash.style.opacity = String(Math.min(0.5, celebrate * 0.45));
+    if (celebrate > CELEBRATE_TIME - 1.2) {
+      el.flash.style.opacity = String(Math.min(0.5, (celebrate - (CELEBRATE_TIME - 1.2)) * 0.45));
       el.flash.style.background = lastGoal === "you" ? "#ffe14d" : "#ff8f6b";
     } else el.flash.style.opacity = "0";
   }
@@ -1683,6 +1722,7 @@ renderTasks();
    ========================================================================= */
 function startMatch() {
   scoreYou = 0; scoreCpu = 0; timeLeft = MATCH_SECONDS; celebrate = 0; F = 0;
+  goalAt = null;
   updateScoreHud();
   const mm = Math.floor(MATCH_SECONDS / 60), ss = MATCH_SECONDS % 60;
   el.clock.textContent = `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
