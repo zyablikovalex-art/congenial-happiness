@@ -38,6 +38,7 @@ const BOARD_H = 56;       // высота борта — «1.2 м»
 const BOARD_BOUNCE = 0.55;// доля скорости, сохраняемая при ударе о борт
 const GOAL_HALF = 172;    // половина створа — ворота 7.32 м
 const GOAL_DEPTH_H = 114; // высота перекладины — 2.44 м; выше — мяч в сетку за воротами
+const GOAL_DEPTH = 75;    // глубина ворот за линией — «1.6 м», как рама в scene.js
 const VIS_NEAR = 1400;    // сколько длины видно за раз — камера едет за мячом
 const PLR_R = 15;         // радиус игрока (мир)
 const BALL_R = 8;
@@ -1166,14 +1167,53 @@ function scoreGoal(who) {
   goalSeq++;
   goalAt = { side: ball.x <= PITCH_L / 2 ? 0 : 1, z: ball.z, h: ball.h };
   celebrate = CELEBRATE_TIME;
-  ball.owner = null; ball.vx = 0; ball.vz = 0; ball.vh = 0;
+  ball.owner = null;   // скорость НЕ гасим: мяч должен влететь в сетку
   resetCharge();
 }
 
 /* Празднование: мяч не считаем, отборов нет, часы стоят. Забившая команда
    бежит к воротам, пропустившая возвращается по местам. Активным игроком
    по-прежнему управляет игрок. */
+/* Пока идёт празднование, мяч живёт своей жизнью внутри ворот: влетает,
+   гасится о сетку и укатывается. Иначе он замирал ровно на линии створа. */
+function updateBallInNet(dt) {
+  ball.x += ball.vx * dt;
+  ball.z += ball.vz * dt;
+  ball.h += ball.vh * dt;
+  ball.vh -= GRAV * dt;
+  if (ball.h <= 0) {
+    ball.h = 0;
+    if (ball.vh < 0) ball.vh = -ball.vh * BOUNCE * 0.6;
+    if (Math.abs(ball.vh) < 30) ball.vh = 0;
+    const fr = Math.exp(-GROUND_FRICTION * 1.8 * dt);   // в сетке катится хуже
+    ball.vx *= fr; ball.vz *= fr;
+  } else {
+    const fr = Math.exp(-AIR_FRICTION * dt);
+    ball.vx *= fr; ball.vz *= fr;
+  }
+  // Ворота — коробочка за линией: задняя сетка, боковые сетки, линия ворот.
+  const right = goalAt && goalAt.side === 1;
+  const line = right ? PITCH_L : 0;
+  const back = right ? PITCH_L + GOAL_DEPTH - BALL_R : -GOAL_DEPTH + BALL_R;
+  // Сетка гасит почти всё: мяч должен остаться лежать в воротах, а не
+  // выскочить обратно на площадку и замереть на линии створа.
+  const NET_ABSORB = -0.06;
+  if (right) {
+    if (ball.x > back) { ball.x = back; ball.vx *= NET_ABSORB; }
+    if (ball.x < line + BALL_R) { ball.x = line + BALL_R; ball.vx *= NET_ABSORB; }
+  } else {
+    if (ball.x < back) { ball.x = back; ball.vx *= NET_ABSORB; }
+    if (ball.x > line - BALL_R) { ball.x = line - BALL_R; ball.vx *= NET_ABSORB; }
+  }
+  const zLo = MOUTH_LO + BALL_R, zHi = MOUTH_HI - BALL_R;
+  if (ball.z < zLo) { ball.z = zLo; ball.vz *= NET_ABSORB; }
+  else if (ball.z > zHi) { ball.z = zHi; ball.vz *= NET_ABSORB; }
+  if (ball.h > GOAL_DEPTH_H - BALL_R) { ball.h = GOAL_DEPTH_H - BALL_R; if (ball.vh > 0) ball.vh = 0; }
+  if (hyp(ball.vx, ball.vz) < 4 && ball.h === 0) { ball.vx = 0; ball.vz = 0; }
+}
+
 function stepCelebrate(dt) {
+  updateBallInNet(dt);
   for (const p of players) {
     if (p === activeOf[myTeam] && isHumanTeam(myTeam)) { userMove(p, dt); continue; }
     if (p.isGK) { moveTo(p, p.home.x, p.home.z, GK_SPEED * 0.5, dt); continue; }
