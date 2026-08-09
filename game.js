@@ -8,19 +8,31 @@
    ========================================================================= */
 
 // ---- Мир ----
-/* Размеры поля привязаны к росту игрока. Модель в scene.js — 86.7 мировых
-   единиц от газона до макушки (замер по геометрии тела, без тени и кольца),
-   это «185 см», значит 1 единица = 2.13 см.
-   Дальше типовое профессиональное поле 105 x 68 м: при росте 1.85 м это
-   отношения 56.76 и 36.76 к росту.  86.7 x 56.76 = 4921,  86.7 x 36.76 = 3187.
-   Максимальные по правилам 120 x 90 пробовали — при них на игрока приходится
-   491 м² вместо 325, и поле выходит непропорционально широким (1.33 против
-   1.54), из-за чего команды выглядят разбросанными. */
-const PITCH_L = 4921;     // длина поля (ось x) — «105 м»
-const PITCH_W = 3187;     // ширина/глубина (ось z) — «68 м»
-const GOAL_HALF = 140;    // половина ширины створа ворот (по z) — прежнего размера
-const VIS_NEAR = 900;     // диапазон панорамирования камеры по длине (мировые единицы)
-const GOAL_DEPTH_H = 105; // макс. высота мяча для гола (~высота перекладины); выше — мимо
+/* ДВОРОВАЯ КОРОБКА.
+
+   Масштаб задан моделью игрока: 86.7 мировых единиц от земли до макушки —
+   это «185 см», значит 1 единица = 2.13 см, 1 метр = 46.86 единиц.
+
+   Размеры взяты у типовой придомовой коробки (она же малогабаритная
+   хоккейная площадка 40 x 20 м, она же максимальный размер площадки для
+   мини-футбола по ФИФА):
+     коробка          40 x 20 м        1874 x 937
+     скругление углов 5 м              234
+     борта            1.2 м            56
+     ворота           3 x 2 м          полуствор 70, перекладина 94
+   Разметка — мини-футбольная: штрафная это четверть круга радиусом 6 м от
+   стойки, точка пенальти 6 м, вторая отметка 10 м, центральный круг 3 м.
+
+   Главное отличие от поля: аутов нет. По периметру идут борта, мяч от них
+   отскакивает, розыгрышей из-за боковой и от ворот не бывает. */
+const PITCH_L = 1874;     // длина коробки (ось x) — «40 м»
+const PITCH_W = 937;      // ширина коробки (ось z) — «20 м»
+const CORNER_R = 234;     // радиус скругления углов — «5 м»
+const BOARD_H = 56;       // высота борта — «1.2 м»
+const BOARD_BOUNCE = 0.55;// доля скорости, сохраняемая при ударе о борт
+const GOAL_HALF = 70;     // половина створа ворот — ворота 3 м
+const GOAL_DEPTH_H = 94;  // высота перекладины — 2 м; выше — мяч бьёт в сетку за воротами
+const VIS_NEAR = PITCH_L; // коробка помещается в кадр целиком — камера не ездит по длине
 const PLR_R = 15;         // радиус игрока (мир)
 const BALL_R = 8;
 
@@ -93,6 +105,9 @@ let camZ = PITCH_W / 2; // фокус камеры по ширине (мягко
 
 function resize() {
   if (window.Scene3D) Scene3D.resize();
+  // Пока игрок не трогал ползунки, высоту держим такой, чтобы коробка
+  // целиком помещалась в кадр — на разных экранах она разная.
+  if (camAuto && window.Scene3D) applyCamSettings({ height: Scene3D.fitHeight() }, false);
   fitMenuStage();
 }
 window.addEventListener("resize", resize);
@@ -118,19 +133,14 @@ function dist(a, b) { return Math.hypot(a.x - b.x, a.z - b.z); }
 // Детерминированный псевдослучай (Math.random в этом окружении недоступен).
 function nrand(n) { const x = Math.sin(n) * 43758.5453; return x - Math.floor(x); }
 
-// ---- Расстановка (4-4-2), доли поля от своих ворот (fx) и по ширине (fz) ----
+// ---- Состав 5 на 5 (вратарь + 4 в поле, схема 2-2, как в мини-футболе) ----
+// Доли коробки: fx от своих ворот, fz по ширине.
 const FORMATION = [
-  { fx: 0.05, fz: 0.50, gk: true }, // вратарь
-  { fx: 0.20, fz: 0.16 },
-  { fx: 0.22, fz: 0.38 },
-  { fx: 0.22, fz: 0.62 },
-  { fx: 0.20, fz: 0.84 },
-  { fx: 0.42, fz: 0.14 },
-  { fx: 0.45, fz: 0.38 },
-  { fx: 0.45, fz: 0.62 },
-  { fx: 0.42, fz: 0.86 },
-  { fx: 0.66, fz: 0.40 },
-  { fx: 0.66, fz: 0.60 },
+  { fx: 0.06, fz: 0.50, gk: true }, // вратарь
+  { fx: 0.26, fz: 0.30 },           // защитники
+  { fx: 0.26, fz: 0.70 },
+  { fx: 0.58, fz: 0.34 },           // нападающие
+  { fx: 0.58, fz: 0.66 },
 ];
 
 // ---- Игроки ----
@@ -219,10 +229,13 @@ const el = {
 /* =========================================================================
    Настройки камеры (угол/высота) — панель с ползунками, сохраняются локально
    ========================================================================= */
-const CAM_DEFAULTS = { angle: 40, height: 8.5 };
-// v1 хранил высоту, отмеренную от старой точки взгляда (2.0) — такие записи
-// дали бы заметно более широкий план, поэтому их выбрасываем.
-const CAM_STORE_V = 2;
+// Высота по умолчанию не фиксирована: её подбирает Scene3D.fitHeight() так,
+// чтобы коробка влезла в кадр при текущих пропорциях экрана.
+const CAM_DEFAULTS = { angle: 40, height: 16 };
+let camAuto = true;   // сбрасывается, как только игрок сам двинул ползунок
+// v1 мерил высоту от старой точки взгляда, v2 — от футбольного поля.
+// И то и другое на коробке даёт неправильный план, поэтому выбрасываем.
+const CAM_STORE_V = 3;
 let paused = false;
 // Демо-режим: пока открыта панель физики, играют оба ИИ (только в матче с ИИ —
 // в сетевой игре командой соперника управляет живой человек).
@@ -246,7 +259,7 @@ function applyCamSettings(s, save) {
 }
 
 function loadCamSettings() {
-  let s = CAM_DEFAULTS;
+  let s = null;
   try {
     const raw = localStorage.getItem("cam");
     if (raw) {
@@ -255,7 +268,8 @@ function loadCamSettings() {
       else localStorage.removeItem("cam");
     }
   } catch (_) {}
-  applyCamSettings(s, false);
+  camAuto = !s;
+  applyCamSettings(s || { angle: CAM_DEFAULTS.angle, height: Scene3D.fitHeight() }, false);
 }
 
 /* =========================================================================
@@ -519,10 +533,18 @@ if (el.settingsBtn) el.settingsBtn.addEventListener("click", openSettings);
 if (el.settingsClose) el.settingsClose.addEventListener("click", closeSettings);
 if (el.settingsReset) el.settingsReset.addEventListener("click", () => {
   if (settingsTab === "phys") resetPhys();
-  else applyCamSettings(CAM_DEFAULTS, true);
+  else {
+    camAuto = true;
+    try { localStorage.removeItem("cam"); } catch (_) {}
+    applyCamSettings({ angle: CAM_DEFAULTS.angle, height: Scene3D.fitHeight() }, false);
+  }
 });
-if (el.angleRange) el.angleRange.addEventListener("input", () => applyCamSettings({ angle: +el.angleRange.value }, true));
-if (el.heightRange) el.heightRange.addEventListener("input", () => applyCamSettings({ height: +el.heightRange.value }, true));
+if (el.angleRange) el.angleRange.addEventListener("input", () => {
+  camAuto = false; applyCamSettings({ angle: +el.angleRange.value }, true);
+});
+if (el.heightRange) el.heightRange.addEventListener("input", () => {
+  camAuto = false; applyCamSettings({ height: +el.heightRange.value }, true);
+});
 
 /* =========================================================================
    Запрет масштабирования на мобильных (iOS Safari игнорирует user-scalable=no).
@@ -703,8 +725,7 @@ function moveActor(p, wx, wz, speed, dt) {
   p.vz += (tvz - p.vz) * k;
   p.x += p.vx * dt;
   p.z += p.vz * dt;
-  p.x = clamp(p.x, PLR_R, PITCH_L - PLR_R);
-  p.z = clamp(p.z, PLR_R, PITCH_W - PLR_R);
+  clampInsideBoards(p, PLR_R);
   const spd = hyp(p.vx, p.vz);
   if (spd > 10) { p.dirx = p.vx / spd; p.dirz = p.vz / spd; p.runPhase += spd * dt * 0.06; }
 }
@@ -862,73 +883,57 @@ function updateFreeBall(dt) {
   const sp = hyp(ball.vx, ball.vz);
   if (sp < 4 && ball.h === 0) { ball.vx = 0; ball.vz = 0; }
 
-  // Лицевые линии: гол, либо аут за линию ворот (удар от ворот / угловой)
-  if (ball.x <= 0) {
-    if (ball.z > MOUTH_LO && ball.z < MOUTH_HI && ball.h < GOAL_DEPTH_H) { scoreGoal("cpu"); return; }
-    goalLineOut(0); return;
-  } else if (ball.x >= PITCH_L) {
-    if (ball.z > MOUTH_LO && ball.z < MOUTH_HI && ball.h < GOAL_DEPTH_H) { scoreGoal("you"); return; }
-    goalLineOut(PITCH_L); return;
-  }
-  // Боковые линии: аут => вброс
-  if (ball.z <= 0 || ball.z >= PITCH_W) { throwInOut(); return; }
+  // Створ ворот — единственный проём в бортах
+  const inMouth = ball.z > MOUTH_LO && ball.z < MOUTH_HI && ball.h < GOAL_DEPTH_H;
+  if (inMouth && ball.x <= 0) { scoreGoal("cpu"); return; }
+  if (inMouth && ball.x >= PITCH_L) { scoreGoal("you"); return; }
+
+  bounceOffBoards();
 
   if (ball.cooldown > 0) ball.cooldown -= dt;
 }
 
-/* =========================================================================
-   Ауты: вброс из-за боковой, удар от ворот, угловой
-   ========================================================================= */
-function nearestFieldOfTeam(team, x, z) {
-  let best = null, bd = 1e9;
-  for (const p of players) {
-    if (p.team !== team || p.isGK) continue;
-    const d = Math.hypot(p.x - x, p.z - z);
-    if (d < bd) { bd = d; best = p; }
+/* Отскок от бортов коробки. Аутов нет: по периметру глухой борт, мимо ворот
+   мяч возвращается в игру. Прямые участки — обычное отражение, в углах борт
+   скруглён радиусом CORNER_R, поэтому там отражаем по нормали дуги. */
+function bounceOffBoards() {
+  const lo = BALL_R, hiX = PITCH_L - BALL_R, hiZ = PITCH_W - BALL_R;
+
+  // В углу? Тогда ограничивает дуга, а не две прямые.
+  const cx = ball.x < CORNER_R ? CORNER_R : ball.x > PITCH_L - CORNER_R ? PITCH_L - CORNER_R : null;
+  const cz = ball.z < CORNER_R ? CORNER_R : ball.z > PITCH_W - CORNER_R ? PITCH_W - CORNER_R : null;
+  if (cx !== null && cz !== null) {
+    const dx = ball.x - cx, dz = ball.z - cz, d = hyp(dx, dz);
+    const max = CORNER_R - BALL_R;
+    if (d > max && d > 0.001) {
+      const nx = dx / d, nz = dz / d;          // нормаль дуги, наружу
+      ball.x = cx + nx * max; ball.z = cz + nz * max;
+      const vn = ball.vx * nx + ball.vz * nz;  // составляющая скорости в борт
+      if (vn > 0) {
+        ball.vx -= (1 + BOARD_BOUNCE) * vn * nx;
+        ball.vz -= (1 + BOARD_BOUNCE) * vn * nz;
+      }
+    }
+    return;
   }
-  return best;
+
+  if (ball.x < lo) { ball.x = lo; if (ball.vx < 0) ball.vx *= -BOARD_BOUNCE; }
+  else if (ball.x > hiX) { ball.x = hiX; if (ball.vx > 0) ball.vx *= -BOARD_BOUNCE; }
+  if (ball.z < lo) { ball.z = lo; if (ball.vz < 0) ball.vz *= -BOARD_BOUNCE; }
+  else if (ball.z > hiZ) { ball.z = hiZ; if (ball.vz > 0) ball.vz *= -BOARD_BOUNCE; }
 }
 
-// Поставить мяч и игрока на точку возобновления, отдать владение.
-function placeRestart(player, x, z) {
-  if (!player) return;
-  const attackDir = player.team === 0 ? 1 : -1;
-  player.x = clamp(x, PLR_R, PITCH_L - PLR_R);
-  player.z = clamp(z, PLR_R, PITCH_W - PLR_R);
-  player.vx = 0; player.vz = 0; player.dirx = attackDir; player.dirz = 0;
-  ball.x = player.x; ball.z = player.z; ball.h = 0;
-  ball.vx = 0; ball.vz = 0; ball.vh = 0;
-  ball.owner = player; ball.lastTeam = player.team; ball.cooldown = 0.35;
-  camX = camClamp(player.x);
-  camZ = clamp(player.z, PITCH_W * 0.05, PITCH_W * 0.95);
-}
-
-function throwInOut() {
-  const side = ball.z <= 0 ? 0 : PITCH_W;         // какая бровка
-  const x = clamp(ball.x, 60, PITCH_L - 60);
-  const team = ball.lastTeam === 0 ? 1 : 0;        // вбрасывает соперник
-  const p = nearestFieldOfTeam(team, x, side);
-  placeRestart(p, x, side);
-  restartMsg = "Вброс"; restartMsgT = 1.4; restartCode = 1;
-}
-
-function goalLineOut(goalX) {
-  // Ворота x=0 атакует team1 (бьёт влево); x=PITCH_L атакует team0.
-  const attackTeam = goalX === 0 ? 1 : 0;
-  const defendTeam = attackTeam === 0 ? 1 : 0;
-  if (ball.lastTeam === attackTeam) {
-    // Атакующие выбили за линию => удар от ворот защищающимся вратарём.
-    const dir = goalX === 0 ? 1 : -1;
-    const gk = players.find((p) => p.team === defendTeam && p.isGK);
-    placeRestart(gk, goalX + dir * 120, PITCH_W / 2);
-    restartMsg = "Удар от ворот"; restartMsgT = 1.4; restartCode = 2;
-  } else {
-    // Защищающиеся выбили => угловой атакующим.
-    const cz = ball.z < PITCH_W / 2 ? 30 : PITCH_W - 30;
-    const p = nearestFieldOfTeam(attackTeam, goalX, cz);
-    placeRestart(p, goalX + (goalX === 0 ? 20 : -20), cz);
-    restartMsg = "Угловой"; restartMsgT = 1.4; restartCode = 3;
+/* Тот же скруглённый прямоугольник, но для игроков: их борт просто не пускает. */
+function clampInsideBoards(o, r) {
+  const cx = o.x < CORNER_R ? CORNER_R : o.x > PITCH_L - CORNER_R ? PITCH_L - CORNER_R : null;
+  const cz = o.z < CORNER_R ? CORNER_R : o.z > PITCH_W - CORNER_R ? PITCH_W - CORNER_R : null;
+  if (cx !== null && cz !== null) {
+    const dx = o.x - cx, dz = o.z - cz, d = hyp(dx, dz), max = CORNER_R - r;
+    if (d > max && d > 0.001) { o.x = cx + dx / d * max; o.z = cz + dz / d * max; }
+    return;
   }
+  o.x = clamp(o.x, r, PITCH_L - r);
+  o.z = clamp(o.z, r, PITCH_W - r);
 }
 
 function resolvePossession(dt) {
@@ -966,8 +971,8 @@ function glueBall() {
   const o = ball.owner;
   let bx = o.x + o.dirx * DRIBBLE_AHEAD;
   let bz = o.z + o.dirz * DRIBBLE_AHEAD;
-  ball.x = clamp(bx, BALL_R, PITCH_L - BALL_R);
-  ball.z = clamp(bz, BALL_R, PITCH_W - BALL_R);
+  ball.x = bx; ball.z = bz;
+  clampInsideBoards(ball, BALL_R);
   ball.h = 0; ball.vh = 0;
   ball.vx = o.vx; ball.vz = o.vz;
 }
@@ -1103,8 +1108,7 @@ function separatePlayers() {
         const nx = dx / d, nz = dz / d;
         a.x -= nx * push; a.z -= nz * push;
         b.x += nx * push; b.z += nz * push;
-        a.x = clamp(a.x, PLR_R, PITCH_L - PLR_R); a.z = clamp(a.z, PLR_R, PITCH_W - PLR_R);
-        b.x = clamp(b.x, PLR_R, PITCH_L - PLR_R); b.z = clamp(b.z, PLR_R, PITCH_W - PLR_R);
+        clampInsideBoards(a, PLR_R); clampInsideBoards(b, PLR_R);
       }
     }
   }
@@ -1122,8 +1126,10 @@ function kickoffReset(kickTeam) {
   ball.vx = 0; ball.vz = 0; ball.vh = 0; ball.owner = null; ball.cooldown = 0.25;
   ball.lastTeam = kickTeam;
   // Начинающая команда получает мяч: ставим её нападающего в центр
-  const fwd = players.find((p) => p.team === kickTeam && !p.isGK && p.home.x === (kickTeam === 0 ? 0.66 * PITCH_L : (1 - 0.66) * PITCH_L));
-  const starter = fwd || players.find((p) => p.team === kickTeam && !p.isGK);
+  // Начинает самый выдвинутый вперёд полевой игрок стартующей команды.
+  const own = players.filter((p) => p.team === kickTeam && !p.isGK);
+  const starter = own.reduce((a, b) =>
+    (kickTeam === 0 ? b.home.x > a.home.x : b.home.x < a.home.x) ? b : a, own[0]);
   if (starter) { starter.x = PITCH_L / 2; starter.z = PITCH_W / 2 + 6; }
   camX = camClamp(PITCH_L / 2); // камера в центр без долгой прокрутки
   camZ = PITCH_W / 2;
@@ -1234,10 +1240,11 @@ function step(dt) {
 // Камера едет за мячом по длине поля (плавно) и мягко следит по ширине.
 // Вызывается и хостом, и гостем — гость ведёт её по присланному мячу.
 function followCamera(dt) {
+  // Коробка целиком в кадре: по длине камера закреплена (VIS_NEAR = PITCH_L),
+  // по ширине оставлен лёгкий увод за мячом, чтобы кадр не был мёртвым.
   const target = camClamp(ball.x);
   camX += (target - camX) * Math.min(1, 2.6 * dt);
-  // Камера доезжает почти до бровок — тогда за линией виден кусок газона.
-  const tz = clamp(ball.z, PITCH_W * 0.05, PITCH_W * 0.95);
+  const tz = clamp(ball.z, PITCH_W * 0.42, PITCH_W * 0.58);
   camZ += (tz - camZ) * Math.min(1, 2.0 * dt);
 }
 
@@ -1251,7 +1258,9 @@ function updateClock() {
    ========================================================================= */
 const SNAP_HZ = 30, INPUT_HZ = 30;
 let snapAcc = 0, inputAcc = 0, lastSnapAt = 0;
-const RESTART_TEXT = ["", "Вброс", "Удар от ворот", "Угловой"];
+// В коробке возобновлений из аута нет — поле осталось только для совместимости
+// протокола снимков с прошлой версией и всегда равно нулю.
+const RESTART_TEXT = [""];
 let restartCode = 0;
 const STATES = ["menu", "intro", "playing", "over"];
 
@@ -1820,7 +1829,8 @@ if (!window.matchMedia("(display-mode: standalone)").matches) {
   el.installHint.hidden = false;
 }
 
-Scene3D.init(canvas, { PITCH_L, PITCH_W, GOAL_HALF, MOUTH_LO, MOUTH_HI });
+Scene3D.init(canvas, { PITCH_L, PITCH_W, GOAL_HALF, MOUTH_LO, MOUTH_HI,
+                       CORNER_R, BOARD_H, GOAL_H: GOAL_DEPTH_H });
 loadCamSettings();
 loadPhys();
 buildPhysUI();

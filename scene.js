@@ -9,16 +9,17 @@ window.Scene3D = (function () {
   const T = window.THREE;
   const S = 0.02; // мир -> три единицы
 
-  const RUNOFF = 420; // мировых единиц газона за каждой линией (видно, когда камера у бровки)
+  const RUNOFF = 130;   // асфальт вокруг коробки, «2.8 м»
+  let CORNER_R, BOARD_H, GOAL_H;   // скругление углов, высота борта, высота ворот
 
   // Настройки камеры (меняются из UI). angle — наклон к горизонту (0..90),
   // height — высота камеры в единицах сцены. Дистанция выводится из них.
-  const camCfg = { angle: 40, height: 8.5 };
+  // Высота подобрана так, чтобы коробка целиком помещалась в кадр.
+  const camCfg = { angle: 40, height: 16 };
   // Смотрим почти на сам мяч, а не поверх голов — иначе он висит в нижней
-  // трети кадра. Высота по умолчанию снижена так, чтобы дистанция
-  // (height − CAM_LOOK_Y)/tan(angle) осталась прежней и поле не отъехало.
+  // трети кадра.
   const CAM_LOOK_Y = 0.3;      // высота точки, на которую смотрит камера в игре
-  const CAM_LOOK_INTRO = 3.0;  // на заставке смотрим выше — видно трибуны и тоннель
+  const CAM_LOOK_INTRO = 3.0;  // на заставке смотрим выше — видно калитку и сетку
   const CAM_AHEAD = 1.0;       // фокус чуть впереди мяча
   const CAM_MAX_DIST = 70;  // ограничение на очень пологих углах
   const BALL_R = 0.14;      // радиус мяча в единицах сцены (чисто визуальный)
@@ -29,6 +30,37 @@ window.Scene3D = (function () {
     if (opts.height != null) camCfg.height = Math.max(3, Math.min(30, +opts.height || 0));
   }
   function getCamera() { return { angle: camCfg.angle, height: camCfg.height }; }
+
+  /* Минимальная высота, при которой коробка целиком попадает в кадр при
+     текущем угле и пропорциях экрана. Коробка фиксированного размера, поэтому
+     «влезает» — проверяемое требование, а не вкусовая настройка: считаем
+     подбором, проецируя её углы пробной камерой. */
+  function cornersOffscreen(camY, margin) {
+    const ang = Math.max(3, Math.min(88, camCfg.angle)) * Math.PI / 180;
+    const u = Math.max(0.5, camY - CAM_LOOK_Y);
+    const horiz = Math.min(u / Math.tan(ang), CAM_MAX_DIST);
+    const c = camera.clone();
+    c.position.set(0, camY, CAM_AHEAD - horiz);
+    c.lookAt(0, CAM_LOOK_Y, CAM_AHEAD);
+    c.updateMatrixWorld();
+    let m = 0;
+    for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+      const v = new T.Vector3(sx * halfL * margin, 0, sz * halfW * margin).project(c);
+      m = Math.max(m, Math.abs(v.x), Math.abs(v.y));
+    }
+    return m;
+  }
+  function fitHeight() {
+    if (!camera || !halfL) return camCfg.height;
+    const margin = 1.06;                      // немного воздуха по краям
+    if (cornersOffscreen(30, margin) > 1) return 30;
+    let lo = 3, hi = 30;
+    for (let i = 0; i < 22; i++) {
+      const mid = (lo + hi) / 2;
+      if (cornersOffscreen(mid, margin) > 1) lo = mid; else hi = mid;
+    }
+    return Math.min(30, Math.ceil(hi * 2) / 2);
+  }
 
   let cfg, renderer, scene, camera;
   let L, W, halfL, halfW, MOUTH_LO, MOUTH_HI, GOAL_HALF;
@@ -63,11 +95,46 @@ window.Scene3D = (function () {
     return new T.MeshStandardMaterial({ color, roughness: rough == null ? 0.85 : rough, metalness: 0.0 });
   }
 
-  // ---- Текстура газона (вид сверху) ----
+  /* Контур коробки: скруглённый прямоугольник в мировых координатах, обход по
+     часовой. Прямые участки разбиты на точки, иначе в них нельзя вырезать
+     проёмы под ворота. Тот же контур используют и покрытие, и борта, и сетка. */
+  function boxOutline(inset, cornerSteps, straightSteps) {
+    const r = Math.max(1, CORNER_R - inset);
+    const x0 = inset, x1 = L - inset, z0 = inset, z1 = W - inset;
+    const pts = [];
+    const line = (ax, az, bx, bz) => {
+      for (let i = 0; i < straightSteps; i++) {
+        const t = i / straightSteps;
+        pts.push([ax + (bx - ax) * t, az + (bz - az) * t]);
+      }
+    };
+    const arc = (cx, cz, a0, a1) => {
+      for (let i = 0; i < cornerSteps; i++) {
+        const a = a0 + (a1 - a0) * (i / cornerSteps);
+        pts.push([cx + Math.cos(a) * r, cz + Math.sin(a) * r]);
+      }
+    };
+    line(x0 + r, z0, x1 - r, z0);
+    arc(x1 - r, z0 + r, -Math.PI / 2, 0);
+    line(x1, z0 + r, x1, z1 - r);
+    arc(x1 - r, z1 - r, 0, Math.PI / 2);
+    line(x1 - r, z1, x0 + r, z1);
+    arc(x0 + r, z1 - r, Math.PI / 2, Math.PI);
+    line(x0, z1 - r, x0, z0 + r);
+    arc(x0 + r, z0 + r, Math.PI, Math.PI * 1.5);
+    return pts;
+  }
+
+  // Точка приходится на проём ворот? Там борта нет.
+  function inMouth(x, z) {
+    return (x < L * 0.02 || x > L * 0.98) && Math.abs(z - W / 2) < GOAL_HALF;
+  }
+
+  // ---- Текстура покрытия (вид сверху) ----
   function pitchTexture() {
-    const TW = 2560, TH = 2048;   // пропорция близка к газону с раннофом
+    const TW = 2048, TH = 1024;
     // Марджины пропорциональны RUNOFF, чтобы разметка ложилась ровно на
-    // логические границы поля (0..L, 0..W), а за ними оставался газон.
+    // границы коробки (0..L, 0..W), а за ними оставался асфальт двора.
     const Mx = TW * RUNOFF / (L + 2 * RUNOFF);
     const My = TH * RUNOFF / (W + 2 * RUNOFF);
     const c = document.createElement("canvas");
@@ -75,42 +142,70 @@ window.Scene3D = (function () {
     const g = c.getContext("2d");
     const px = (wx) => Mx + (wx / L) * (TW - 2 * Mx);
     const py = (wz) => My + (wz / W) * (TH - 2 * My);
-    const lx = (w) => (w / L) * (TW - 2 * Mx);   // длина по x в пикселях текстуры
-    const lz = (w) => (w / W) * (TH - 2 * My);   // длина по z в пикселях текстуры
-    // Толщина линий и точки задаются в мировых единицах: иначе при изменении
-    // размера поля разметка становилась бы толще или тоньше относительно игроков.
-    const LINE_W = 12, SPOT_R = 10, CIRCLE_R = 424;   // круг — «9.15 м»
+    const lx = (w) => (w / L) * (TW - 2 * Mx);
+    const lz = (w) => (w / W) * (TH - 2 * My);
+    // Мини-футбольная разметка в мировых единицах (46.86 ед на метр):
+    // линия 8 см, центральный круг 3 м, штрафная — четверть круга 6 м от стойки,
+    // точка пенальти 6 м, вторая отметка 10 м.
+    const LINE_W = 5, CIRCLE_R = 141, AREA_R = 281, PEN_X = 281, PEN2_X = 469;
+    const SPOT_R = 6;
 
-    // Полосатый газон (вертикальные полосы вдоль длины)
-    const stripes = 14;
-    for (let i = 0; i < stripes; i++) {
-      g.fillStyle = i % 2 ? "#2f9d4e" : "#279247";
-      g.fillRect((i / stripes) * TW, 0, TW / stripes + 1, TH);
-    }
-    // Тёмная окантовка (за линиями — газон-раннофф уже нарисован полосами)
-    g.strokeStyle = "rgba(255,255,255,0.92)";
-    g.lineWidth = Math.max(2, lx(LINE_W));
-    // Границы
-    g.strokeRect(px(0), py(0), px(L) - px(0), py(W) - py(0));
-    // Средняя линия
-    g.beginPath(); g.moveTo(px(L / 2), py(0)); g.lineTo(px(L / 2), py(W)); g.stroke();
-    // Центральный круг + точка
+    // Ломаная по мировым точкам — так круг на неквадратной текстуре
+    // остаётся кругом в мире, а не превращается в эллипс.
+    const stroke = (pts, close) => {
+      g.beginPath();
+      pts.forEach(([x, z], i) => (i ? g.lineTo(px(x), py(z)) : g.moveTo(px(x), py(z))));
+      if (close) g.closePath();
+      g.stroke();
+    };
+    const arcPts = (cx, cz, r, a0, a1, n) => {
+      const out = [];
+      for (let i = 0; i <= n; i++) {
+        const a = a0 + (a1 - a0) * (i / n);
+        out.push([cx + Math.cos(a) * r, cz + Math.sin(a) * r]);
+      }
+      return out;
+    };
+    const spot = (x, z, r) => {
+      g.beginPath(); g.ellipse(px(x), py(z), lx(r), lz(r), 0, 0, Math.PI * 2); g.fill();
+    };
+
+    // Асфальт двора, поверх — резиновое покрытие коробки
+    g.fillStyle = "#3b3f45"; g.fillRect(0, 0, TW, TH);
+    g.fillStyle = "#2b7a48";
     g.beginPath();
-    g.ellipse(px(L / 2), py(W / 2), lx(CIRCLE_R), lz(CIRCLE_R), 0, 0, Math.PI * 2);
-    g.stroke();
+    boxOutline(0, 10, 1).forEach(([x, z], i) => (i ? g.lineTo(px(x), py(z)) : g.moveTo(px(x), py(z))));
+    g.closePath(); g.fill();
+    // Крошка: редкие точки, чтобы покрытие не выглядело заливкой
+    for (let i = 0; i < 9000; i++) {
+      const x = nr(i * 1.7) * TW, y = nr(i * 3.3 + 5) * TH;
+      g.fillStyle = nr(i * 5.9) > 0.5 ? "rgba(255,255,255,0.045)" : "rgba(0,0,0,0.05)";
+      g.fillRect(x, y, 3, 3);
+    }
+
+    g.strokeStyle = "rgba(255,255,255,0.9)";
+    g.lineWidth = Math.max(2, lx(LINE_W));
+    g.lineJoin = "round";
+    // Контур коробки, средняя линия, центральный круг
+    stroke(boxOutline(0, 10, 1), true);
+    stroke([[L / 2, 0], [L / 2, W]]);
+    stroke(arcPts(L / 2, W / 2, CIRCLE_R, 0, Math.PI * 2, 48));
     g.fillStyle = "#fff";
-    g.beginPath(); g.arc(px(L / 2), py(W / 2), lx(SPOT_R), 0, Math.PI * 2); g.fill();
-    // Штрафные + вратарские + точки пенальти
-    // Разметка в тех же «2.16 см на единицу», что и поле: штрафная 16.5 x 40.32 м,
-    // вратарская 5.5 x 18.32 м, точка пенальти 11 м, центральный круг 9.15 м.
-    const boxD = 764, boxHalf = 933, gaD = 255, gaHalf = 424, penX = 509;
+    spot(L / 2, W / 2, SPOT_R);
+
+    // Штрафная мини-футбола: две четверти круга от стоек, соединённые прямой
     [0, 1].forEach((side) => {
-      const s = side === 0 ? 1 : -1;
       const gx = side === 0 ? 0 : L;
-      g.strokeRect(px(gx), py(W / 2 - boxHalf), s * (px(boxD) - px(0)), py(W / 2 + boxHalf) - py(W / 2 - boxHalf));
-      g.strokeRect(px(gx), py(W / 2 - gaHalf), s * (px(gaD) - px(0)), py(W / 2 + gaHalf) - py(W / 2 - gaHalf));
+      const s = side === 0 ? 1 : -1;                 // куда «внутрь» коробки
+      const lo = W / 2 - GOAL_HALF, hi = W / 2 + GOAL_HALF;
+      const a = side === 0 ? 0 : Math.PI;            // направление внутрь по x
+      stroke([
+        ...arcPts(gx, lo, AREA_R, a - Math.PI / 2 * s, a, 16),
+        ...arcPts(gx, hi, AREA_R, a, a + Math.PI / 2 * s, 16),
+      ]);
       g.fillStyle = "#fff";
-      g.beginPath(); g.arc(px(side === 0 ? penX : L - penX), py(W / 2), lx(SPOT_R * 0.85), 0, Math.PI * 2); g.fill();
+      spot(gx + s * PEN_X, W / 2, SPOT_R);
+      spot(gx + s * PEN2_X, W / 2, SPOT_R);
     });
 
     const tex = new T.CanvasTexture(c);
@@ -119,25 +214,75 @@ window.Scene3D = (function () {
     return tex;
   }
 
-  function crowdTexture() {
+  function fenceTexture() {
     const c = document.createElement("canvas");
-    c.width = 256; c.height = 128;
+    c.width = c.height = 64;
     const g = c.getContext("2d");
-    g.fillStyle = "#181d27"; g.fillRect(0, 0, 256, 128);
-    for (let y = 6; y < 128; y += 8) {
-      for (let x = 4; x < 256; x += 7) {
-        const v = nr(x * 1.7 + y * 3.1);
-        const pal = ["#c94f4f", "#4f7fc9", "#e0c24f", "#57b06a", "#b8c0cc", "#d98a52"];
-        g.fillStyle = pal[Math.floor(v * pal.length) % pal.length];
-        g.globalAlpha = 0.5 + v * 0.5;
-        g.fillRect(x, y, 4, 4);
-      }
+    g.strokeStyle = "rgba(214,228,238,0.9)";
+    g.lineWidth = 5;
+    g.beginPath();
+    g.moveTo(-4, -4); g.lineTo(68, 68); g.moveTo(68, -4); g.lineTo(-4, 68);
+    g.stroke();
+    const t = new T.CanvasTexture(c);
+    t.wrapS = t.wrapT = T.RepeatWrapping;
+    return t;
+  }
+
+  /* Стенка по контуру коробки: борт или сетка. Строим одним мешем — полоса
+     треугольников вдоль контура, поэтому десятки сегментов не превращаются
+     в десятки вызовов отрисовки. Высоты — функции от мировой x, чтобы сетка
+     за воротами была выше, чем по бокам. */
+  function wallStrip(pts, yBottom, yTop, opts) {
+    const skip = opts && opts.skipMouth;
+    const tile = (opts && opts.tile) || 100;   // мировых единиц на клетку текстуры
+    const pos = [], uv = [];
+    let run = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i], b = pts[(i + 1) % pts.length];
+      const seg = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      const u0 = run / tile, u1 = (run + seg) / tile;
+      run += seg;
+      if (skip && inMouth((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)) continue;
+      const ax = (a[0] - L / 2) * S, az = (a[1] - W / 2) * S;
+      const bx = (b[0] - L / 2) * S, bz = (b[1] - W / 2) * S;
+      const ay0 = yBottom(a[0]), by0 = yBottom(b[0]);
+      const ay1 = yTop(a[0]), by1 = yTop(b[0]);
+      const va = (ay1 - ay0) / S / tile, vb = (by1 - by0) / S / tile;
+      pos.push(ax, ay0, az, bx, by0, bz, bx, by1, bz);
+      uv.push(u0, 0, u1, 0, u1, vb);
+      pos.push(ax, ay0, az, bx, by1, bz, ax, ay1, az);
+      uv.push(u0, 0, u1, vb, u0, va);
     }
-    g.globalAlpha = 1;
-    const tex = new T.CanvasTexture(c);
-    tex.wrapS = tex.wrapT = T.RepeatWrapping;
-    tex.repeat.set(10, 3);
-    return tex;
+    const geo = new T.BufferGeometry();
+    geo.setAttribute("position", new T.Float32BufferAttribute(pos, 3));
+    geo.setAttribute("uv", new T.Float32BufferAttribute(uv, 2));
+    geo.computeVertexNormals();
+    return geo;
+  }
+
+  // ---- Борта ----
+  function makeBoards() {
+    const grp = new T.Group();
+    const pts = boxOutline(0, 14, 6);
+    const hTop = BOARD_H * S, rail = hTop * 0.85;
+    grp.add(new T.Mesh(wallStrip(pts, () => 0, () => rail, { skipMouth: true }),
+      new T.MeshStandardMaterial({ color: 0x2f6fae, roughness: 0.8, side: T.DoubleSide })));
+    grp.add(new T.Mesh(wallStrip(pts, () => rail, () => hTop, { skipMouth: true }),
+      new T.MeshStandardMaterial({ color: 0xe8eef5, roughness: 0.6, side: T.DoubleSide })));
+    return grp;
+  }
+
+  // ---- Сетка над бортами: по бокам «3 м», за воротами «5 м» ----
+  function fenceTopY(wx) {
+    const t = Math.min(1, Math.max(0, (Math.abs(wx - L / 2) / (L / 2) - 0.55) / 0.4));
+    return (141 + t * t * (234 - 141)) * S;
+  }
+  function makeFence() {
+    const geo = wallStrip(boxOutline(0, 14, 6), () => BOARD_H * S, fenceTopY, { tile: 47 });
+    return new T.Mesh(geo, new T.MeshBasicMaterial({
+      map: fenceTexture(), transparent: true, opacity: 0.5,
+      side: T.DoubleSide, depthWrite: false,
+    }));
   }
 
   function ballTexture() {
@@ -255,7 +400,7 @@ window.Scene3D = (function () {
     const grp = new T.Group();
     const white = mat(0xffffff, 0.5);
     const zLo = (MOUTH_LO - W / 2) * S, zHi = (MOUTH_HI - W / 2) * S;
-    const H = 2.2, R = 0.07, depth = 0.9 * faceIn;
+    const H = GOAL_H * S, R = 0.055, depth = 0.55 * faceIn;
     const tx = (gx - L / 2) * S;
     // стойки
     [zLo, zHi].forEach((z) => {
@@ -276,42 +421,16 @@ window.Scene3D = (function () {
     return grp;
   }
 
-  // ---- Трибуны ----
-  // Четыре наклонённые назад стены-«чаши», вынесенные за газон, чтобы камера,
-  // опускаясь к ближней бровке, не упиралась в них.
-  function makeStands() {
-    const grp = new T.Group();
-    const standMat = new T.MeshStandardMaterial({ map: crowdTexture(), roughness: 1, side: T.DoubleSide });
-    const H = 9, TILT = 0.42, GAP = 1.2;
-    const ex = groundHalfX + GAP, ez = groundHalfZ + GAP;
-
-    function wall(width, x, z, yaw) {
-      const m = new T.Mesh(new T.PlaneGeometry(width, H), standMat);
-      m.rotation.order = "YXZ";       // сперва наклон, затем разворот
-      m.rotation.y = yaw;
-      m.rotation.x = TILT;
-      m.position.set(x, H * 0.5 * Math.cos(TILT), z);
-      return m;
-    }
-    grp.add(wall(ex * 2 + 4, 0, -ez, 0));            // ближняя (за нижней бровкой)
-    grp.add(wall(ex * 2 + 4, 0, ez, Math.PI));       // дальняя
-    grp.add(wall(ez * 2 + 4, -ex, 0, Math.PI / 2));  // левая (за воротами)
-    grp.add(wall(ez * 2 + 4, ex, 0, -Math.PI / 2));  // правая
-    return grp;
-  }
-
-  // ---- Тоннель ----
+  // ---- Калитка в дальнем борту (через неё команды выходят на заставке) ----
   function makeTunnel() {
     const grp = new T.Group();
-    const dark = mat(0x0a0d12, 1);
-    const tz = (W / 2 - W / 2) * 0 + (W - W / 2) * S; // дальняя бровка
-    const tx = 0;
-    const box = new T.Mesh(new T.BoxGeometry(2.4, 1.2, 1.2), dark);
-    box.position.set(tx, 0.6, (W / 2) * S + 0.6);
-    grp.add(box);
-    const mouth = new T.Mesh(new T.PlaneGeometry(1.6, 1.0),
-      new T.MeshBasicMaterial({ color: 0x02040a }));
-    mouth.position.set(tx, 0.55, (W / 2) * S + 0.01);
+    const w = 1.5, h = BOARD_H * S * 1.2, z = (W / 2) * S;
+    const frame = new T.Mesh(new T.BoxGeometry(w, h, 0.1), mat(0xd8dee6, 0.6));
+    frame.position.set(0, h / 2, z + 0.05);
+    grp.add(frame);
+    const mouth = new T.Mesh(new T.PlaneGeometry(w * 0.8, h * 0.78),
+      new T.MeshBasicMaterial({ color: 0x1b2028 }));
+    mouth.position.set(0, h * 0.42, z + 0.11);
     grp.add(mouth);
     return grp;
   }
@@ -379,6 +498,7 @@ window.Scene3D = (function () {
     cfg = config;
     L = cfg.PITCH_L; W = cfg.PITCH_W; GOAL_HALF = cfg.GOAL_HALF;
     MOUTH_LO = cfg.MOUTH_LO; MOUTH_HI = cfg.MOUTH_HI;
+    CORNER_R = cfg.CORNER_R; BOARD_H = cfg.BOARD_H; GOAL_H = cfg.GOAL_H;
     halfL = (L / 2) * S; halfW = (W / 2) * S;
     groundHalfX = (L / 2 + RUNOFF) * S;
     groundHalfZ = (W / 2 + RUNOFF) * S;
@@ -401,7 +521,7 @@ window.Scene3D = (function () {
     scene.add(sun);
 
     // Тёмная база под всем + газон с разметкой (шире поля на RUNOFF с каждой стороны)
-    const base = new T.Mesh(new T.PlaneGeometry(groundHalfX * 2 + 8, groundHalfZ * 2 + 8), mat(0x1f6b39, 1));
+    const base = new T.Mesh(new T.PlaneGeometry(groundHalfX * 2 + 60, groundHalfZ * 2 + 60), mat(0x3b3f45, 1));
     base.rotation.x = -Math.PI / 2; base.position.y = -0.02; scene.add(base);
 
     const pitch = new T.Mesh(new T.PlaneGeometry(groundHalfX * 2, groundHalfZ * 2),
@@ -409,7 +529,8 @@ window.Scene3D = (function () {
     pitch.rotation.x = -Math.PI / 2;
     scene.add(pitch);
 
-    scene.add(makeStands());
+    scene.add(makeBoards());
+    scene.add(makeFence());
     scene.add(makeTunnel());
     scene.add(makeGoal(0, 1));
     scene.add(makeGoal(L, -1));
@@ -519,8 +640,10 @@ window.Scene3D = (function () {
     const fx = (gs.camX - L / 2) * S;
     const fz = ((gs.camZ != null ? gs.camZ : W / 2) - W / 2) * S;
     const lookZ = fz + CAM_AHEAD;
-    // Не заезжаем за газон/трибуны, когда камера опускается к ближней бровке.
-    const cz = Math.max(lookZ - horiz, -(groundHalfZ - 1));
+    // Раньше камеру не пускали за газон, чтобы она не влезала в трибуны.
+    // Трибун нет, а коробка маленькая: с этим ограничителем камера не могла
+    // отъехать настолько, чтобы вся коробка попала в кадр.
+    const cz = lookZ - horiz;
 
     // На заставке камера с того же места смотрит выше — в кадр попадают
     // тоннель, трибуны и салюты. К свистку взгляд плавно съезжает на мяч.
@@ -533,5 +656,5 @@ window.Scene3D = (function () {
     renderer.render(scene, camera);
   }
 
-  return { init, resize, render, setCamera, getCamera };
+  return { init, resize, render, setCamera, getCamera, fitHeight };
 })();
