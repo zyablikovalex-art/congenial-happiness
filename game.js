@@ -13,26 +13,29 @@
    Масштаб задан моделью игрока: 86.7 мировых единиц от земли до макушки —
    это «185 см», значит 1 единица = 2.13 см, 1 метр = 46.86 единиц.
 
-   Размеры взяты у типовой придомовой коробки (она же малогабаритная
-   хоккейная площадка 40 x 20 м, она же максимальный размер площадки для
-   мини-футбола по ФИФА):
-     коробка          40 x 20 м        1874 x 937
-     скругление углов 5 м              234
+   Размер площадки взят у режима Rush из серии EA FC — 63.7 x 46.6 м, 5 на 5,
+   ворота стандартные. Это 41.6% площади обычного поля и 297 м² на игрока,
+   почти как в настоящем футболе (325), поэтому не тесно.
+     коробка          63.7 x 46.6 м    2985 x 2184
+     скругление углов 8.5 м            398   (как у хоккейной коробки 60x30)
      борта            1.2 м            56
-     ворота           3 x 2 м          полуствор 70, перекладина 94
-   Разметка — мини-футбольная: штрафная это четверть круга радиусом 6 м от
-   стойки, точка пенальти 6 м, вторая отметка 10 м, центральный круг 3 м.
+     ворота           7.32 x 2.44 м    полуствор 172, перекладина 114
+   Разметка мини-футбольная, увеличенная в 1.59 раза вслед за площадкой:
+   штрафная — четверть круга радиусом 9.6 м от стойки, точка пенальти 9.6 м,
+   вторая отметка 15.9 м, центральный круг 4.8 м.
 
    Главное отличие от поля: аутов нет. По периметру идут борта, мяч от них
-   отскакивает, розыгрышей из-за боковой и от ворот не бывает. */
-const PITCH_L = 1874;     // длина коробки (ось x) — «40 м»
-const PITCH_W = 937;      // ширина коробки (ось z) — «20 м»
-const CORNER_R = 234;     // радиус скругления углов — «5 м»
+   отскакивает, розыгрышей из-за боковой и от ворот не бывает. Единственный
+   проём в бортах — створ ворот, и в нём борта нет вообще: иначе мяч
+   отражался бы за 8 единиц до линии и гол не засчитывался. */
+const PITCH_L = 2985;     // длина коробки (ось x) — «63.7 м»
+const PITCH_W = 2184;     // ширина коробки (ось z) — «46.6 м»
+const CORNER_R = 398;     // радиус скругления углов — «8.5 м»
 const BOARD_H = 56;       // высота борта — «1.2 м»
 const BOARD_BOUNCE = 0.55;// доля скорости, сохраняемая при ударе о борт
-const GOAL_HALF = 70;     // половина створа ворот — ворота 3 м
-const GOAL_DEPTH_H = 94;  // высота перекладины — 2 м; выше — мяч бьёт в сетку за воротами
-const VIS_NEAR = PITCH_L; // коробка помещается в кадр целиком — камера не ездит по длине
+const GOAL_HALF = 172;    // половина створа — ворота 7.32 м
+const GOAL_DEPTH_H = 114; // высота перекладины — 2.44 м; выше — мяч в сетку за воротами
+const VIS_NEAR = 1400;    // сколько длины видно за раз — камера едет за мячом
 const PLR_R = 15;         // радиус игрока (мир)
 const BALL_R = 8;
 
@@ -105,9 +108,6 @@ let camZ = PITCH_W / 2; // фокус камеры по ширине (мягко
 
 function resize() {
   if (window.Scene3D) Scene3D.resize();
-  // Пока игрок не трогал ползунки, высоту держим такой, чтобы коробка
-  // целиком помещалась в кадр — на разных экранах она разная.
-  if (camAuto && window.Scene3D) applyCamSettings({ height: Scene3D.fitHeight() }, false);
   fitMenuStage();
 }
 window.addEventListener("resize", resize);
@@ -229,10 +229,7 @@ const el = {
 /* =========================================================================
    Настройки камеры (угол/высота) — панель с ползунками, сохраняются локально
    ========================================================================= */
-// Высота по умолчанию не фиксирована: её подбирает Scene3D.fitHeight() так,
-// чтобы коробка влезла в кадр при текущих пропорциях экрана.
-const CAM_DEFAULTS = { angle: 40, height: 16 };
-let camAuto = true;   // сбрасывается, как только игрок сам двинул ползунок
+const CAM_DEFAULTS = { angle: 40, height: 12 };
 // v1 мерил высоту от старой точки взгляда, v2 — от футбольного поля.
 // И то и другое на коробке даёт неправильный план, поэтому выбрасываем.
 const CAM_STORE_V = 3;
@@ -268,8 +265,7 @@ function loadCamSettings() {
       else localStorage.removeItem("cam");
     }
   } catch (_) {}
-  camAuto = !s;
-  applyCamSettings(s || { angle: CAM_DEFAULTS.angle, height: Scene3D.fitHeight() }, false);
+  applyCamSettings(s || CAM_DEFAULTS, false);
 }
 
 /* =========================================================================
@@ -533,18 +529,10 @@ if (el.settingsBtn) el.settingsBtn.addEventListener("click", openSettings);
 if (el.settingsClose) el.settingsClose.addEventListener("click", closeSettings);
 if (el.settingsReset) el.settingsReset.addEventListener("click", () => {
   if (settingsTab === "phys") resetPhys();
-  else {
-    camAuto = true;
-    try { localStorage.removeItem("cam"); } catch (_) {}
-    applyCamSettings({ angle: CAM_DEFAULTS.angle, height: Scene3D.fitHeight() }, false);
-  }
+  else applyCamSettings(CAM_DEFAULTS, true);
 });
-if (el.angleRange) el.angleRange.addEventListener("input", () => {
-  camAuto = false; applyCamSettings({ angle: +el.angleRange.value }, true);
-});
-if (el.heightRange) el.heightRange.addEventListener("input", () => {
-  camAuto = false; applyCamSettings({ height: +el.heightRange.value }, true);
-});
+if (el.angleRange) el.angleRange.addEventListener("input", () => applyCamSettings({ angle: +el.angleRange.value }, true));
+if (el.heightRange) el.heightRange.addEventListener("input", () => applyCamSettings({ height: +el.heightRange.value }, true));
 
 /* =========================================================================
    Запрет масштабирования на мобильных (iOS Safari игнорирует user-scalable=no).
@@ -883,14 +871,24 @@ function updateFreeBall(dt) {
   const sp = hyp(ball.vx, ball.vz);
   if (sp < 4 && ball.h === 0) { ball.vx = 0; ball.vz = 0; }
 
-  // Створ ворот — единственный проём в бортах
-  const inMouth = ball.z > MOUTH_LO && ball.z < MOUTH_HI && ball.h < GOAL_DEPTH_H;
-  if (inMouth && ball.x <= 0) { scoreGoal("cpu"); return; }
-  if (inMouth && ball.x >= PITCH_L) { scoreGoal("you"); return; }
-
   bounceOffBoards();
 
   if (ball.cooldown > 0) ball.cooldown -= dt;
+}
+
+/* Мяч в проёме ворот? Там борта нет: ни отражения, ни ограничения по x,
+   иначе мяч разворачивался бы на радиусе BALL_R, не доходя до линии. */
+function ballInMouth() {
+  return ball.z > MOUTH_LO && ball.z < MOUTH_HI && ball.h < GOAL_DEPTH_H;
+}
+
+/* Гол засчитывается по пересечению линии ворот — независимо от того, летит
+   мяч свободно или его завёл игрок. Возвращает true, если матч перезапущен. */
+function checkGoal() {
+  if (!ballInMouth()) return false;
+  if (ball.x <= 0) { scoreGoal("cpu"); return true; }
+  if (ball.x >= PITCH_L) { scoreGoal("you"); return true; }
+  return false;
 }
 
 /* Отскок от бортов коробки. Аутов нет: по периметру глухой борт, мимо ворот
@@ -898,6 +896,7 @@ function updateFreeBall(dt) {
    скруглён радиусом CORNER_R, поэтому там отражаем по нормали дуги. */
 function bounceOffBoards() {
   const lo = BALL_R, hiX = PITCH_L - BALL_R, hiZ = PITCH_W - BALL_R;
+  const openEnd = ballInMouth();   // торцевого борта в створе нет
 
   // В углу? Тогда ограничивает дуга, а не две прямые.
   const cx = ball.x < CORNER_R ? CORNER_R : ball.x > PITCH_L - CORNER_R ? PITCH_L - CORNER_R : null;
@@ -917,14 +916,18 @@ function bounceOffBoards() {
     return;
   }
 
-  if (ball.x < lo) { ball.x = lo; if (ball.vx < 0) ball.vx *= -BOARD_BOUNCE; }
-  else if (ball.x > hiX) { ball.x = hiX; if (ball.vx > 0) ball.vx *= -BOARD_BOUNCE; }
+  if (!openEnd) {
+    if (ball.x < lo) { ball.x = lo; if (ball.vx < 0) ball.vx *= -BOARD_BOUNCE; }
+    else if (ball.x > hiX) { ball.x = hiX; if (ball.vx > 0) ball.vx *= -BOARD_BOUNCE; }
+  }
   if (ball.z < lo) { ball.z = lo; if (ball.vz < 0) ball.vz *= -BOARD_BOUNCE; }
   else if (ball.z > hiZ) { ball.z = hiZ; if (ball.vz > 0) ball.vz *= -BOARD_BOUNCE; }
 }
 
-/* Тот же скруглённый прямоугольник, но для игроков: их борт просто не пускает. */
-function clampInsideBoards(o, r) {
+/* Тот же скруглённый прямоугольник, но без отскока — для игроков, а также
+   для мяча на ноге. openEnd оставляет открытым створ, чтобы мяч можно было
+   завести в ворота с ведения, а не только ударом. */
+function clampInsideBoards(o, r, openEnd) {
   const cx = o.x < CORNER_R ? CORNER_R : o.x > PITCH_L - CORNER_R ? PITCH_L - CORNER_R : null;
   const cz = o.z < CORNER_R ? CORNER_R : o.z > PITCH_W - CORNER_R ? PITCH_W - CORNER_R : null;
   if (cx !== null && cz !== null) {
@@ -932,7 +935,7 @@ function clampInsideBoards(o, r) {
     if (d > max && d > 0.001) { o.x = cx + dx / d * max; o.z = cz + dz / d * max; }
     return;
   }
-  o.x = clamp(o.x, r, PITCH_L - r);
+  if (!openEnd) o.x = clamp(o.x, r, PITCH_L - r);
   o.z = clamp(o.z, r, PITCH_W - r);
 }
 
@@ -972,7 +975,7 @@ function glueBall() {
   let bx = o.x + o.dirx * DRIBBLE_AHEAD;
   let bz = o.z + o.dirz * DRIBBLE_AHEAD;
   ball.x = bx; ball.z = bz;
-  clampInsideBoards(ball, BALL_R);
+  clampInsideBoards(ball, BALL_R, ballInMouth());
   ball.h = 0; ball.vh = 0;
   ball.vx = o.vx; ball.vz = o.vz;
 }
@@ -1229,6 +1232,7 @@ function step(dt) {
   if (!ball.owner) updateFreeBall(dt);
   resolvePossession(dt);
   if (ball.owner) glueBall();
+  if (checkGoal()) return;   // гол перезапускает розыгрыш
 
   separatePlayers();
 
@@ -1240,11 +1244,11 @@ function step(dt) {
 // Камера едет за мячом по длине поля (плавно) и мягко следит по ширине.
 // Вызывается и хостом, и гостем — гость ведёт её по присланному мячу.
 function followCamera(dt) {
-  // Коробка целиком в кадре: по длине камера закреплена (VIS_NEAR = PITCH_L),
-  // по ширине оставлен лёгкий увод за мячом, чтобы кадр не был мёртвым.
+  // Камера едет за мячом по длине и мягко следует по ширине: площадка Rush
+  // слишком велика, чтобы держать её в кадре целиком.
   const target = camClamp(ball.x);
   camX += (target - camX) * Math.min(1, 2.6 * dt);
-  const tz = clamp(ball.z, PITCH_W * 0.42, PITCH_W * 0.58);
+  const tz = clamp(ball.z, PITCH_W * 0.12, PITCH_W * 0.88);
   camZ += (tz - camZ) * Math.min(1, 2.0 * dt);
 }
 

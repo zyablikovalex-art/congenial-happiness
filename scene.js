@@ -14,8 +14,8 @@ window.Scene3D = (function () {
 
   // Настройки камеры (меняются из UI). angle — наклон к горизонту (0..90),
   // height — высота камеры в единицах сцены. Дистанция выводится из них.
-  // Высота подобрана так, чтобы коробка целиком помещалась в кадр.
-  const camCfg = { angle: 40, height: 16 };
+  // Площадка Rush велика — целиком её не показываем, камера едет за мячом.
+  const camCfg = { angle: 40, height: 12 };
   // Смотрим почти на сам мяч, а не поверх голов — иначе он висит в нижней
   // трети кадра.
   const CAM_LOOK_Y = 0.3;      // высота точки, на которую смотрит камера в игре
@@ -27,40 +27,9 @@ window.Scene3D = (function () {
   function setCamera(opts) {
     if (!opts) return;
     if (opts.angle != null) camCfg.angle = Math.max(0, Math.min(90, +opts.angle || 0));
-    if (opts.height != null) camCfg.height = Math.max(3, Math.min(30, +opts.height || 0));
+    if (opts.height != null) camCfg.height = Math.max(3, Math.min(40, +opts.height || 0));
   }
   function getCamera() { return { angle: camCfg.angle, height: camCfg.height }; }
-
-  /* Минимальная высота, при которой коробка целиком попадает в кадр при
-     текущем угле и пропорциях экрана. Коробка фиксированного размера, поэтому
-     «влезает» — проверяемое требование, а не вкусовая настройка: считаем
-     подбором, проецируя её углы пробной камерой. */
-  function cornersOffscreen(camY, margin) {
-    const ang = Math.max(3, Math.min(88, camCfg.angle)) * Math.PI / 180;
-    const u = Math.max(0.5, camY - CAM_LOOK_Y);
-    const horiz = Math.min(u / Math.tan(ang), CAM_MAX_DIST);
-    const c = camera.clone();
-    c.position.set(0, camY, CAM_AHEAD - horiz);
-    c.lookAt(0, CAM_LOOK_Y, CAM_AHEAD);
-    c.updateMatrixWorld();
-    let m = 0;
-    for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
-      const v = new T.Vector3(sx * halfL * margin, 0, sz * halfW * margin).project(c);
-      m = Math.max(m, Math.abs(v.x), Math.abs(v.y));
-    }
-    return m;
-  }
-  function fitHeight() {
-    if (!camera || !halfL) return camCfg.height;
-    const margin = 1.06;                      // немного воздуха по краям
-    if (cornersOffscreen(30, margin) > 1) return 30;
-    let lo = 3, hi = 30;
-    for (let i = 0; i < 22; i++) {
-      const mid = (lo + hi) / 2;
-      if (cornersOffscreen(mid, margin) > 1) lo = mid; else hi = mid;
-    }
-    return Math.min(30, Math.ceil(hi * 2) / 2);
-  }
 
   let cfg, renderer, scene, camera;
   let L, W, halfL, halfW, MOUTH_LO, MOUTH_HI, GOAL_HALF;
@@ -127,7 +96,7 @@ window.Scene3D = (function () {
 
   // Точка приходится на проём ворот? Там борта нет.
   function inMouth(x, z) {
-    return (x < L * 0.02 || x > L * 0.98) && Math.abs(z - W / 2) < GOAL_HALF;
+    return (x < CORNER_R * 0.1 || x > L - CORNER_R * 0.1) && Math.abs(z - W / 2) < GOAL_HALF;
   }
 
   // ---- Текстура покрытия (вид сверху) ----
@@ -144,11 +113,11 @@ window.Scene3D = (function () {
     const py = (wz) => My + (wz / W) * (TH - 2 * My);
     const lx = (w) => (w / L) * (TW - 2 * Mx);
     const lz = (w) => (w / W) * (TH - 2 * My);
-    // Мини-футбольная разметка в мировых единицах (46.86 ед на метр):
-    // линия 8 см, центральный круг 3 м, штрафная — четверть круга 6 м от стойки,
-    // точка пенальти 6 м, вторая отметка 10 м.
-    const LINE_W = 5, CIRCLE_R = 141, AREA_R = 281, PEN_X = 281, PEN2_X = 469;
-    const SPOT_R = 6;
+    // Мини-футбольная разметка, увеличенная в 1.59 раза вслед за площадкой
+    // (46.86 ед на метр): линия 8 см, круг 4.8 м, штрафная — четверть круга
+    // 9.6 м от стойки, точка пенальти 9.6 м, вторая отметка 15.9 м.
+    const LINE_W = 5, CIRCLE_R = 224, AREA_R = 448, PEN_X = 448, PEN2_X = 746;
+    const SPOT_R = 7;
 
     // Ломаная по мировым точкам — так круг на неквадратной текстуре
     // остаётся кругом в мире, а не превращается в эллипс.
@@ -275,7 +244,7 @@ window.Scene3D = (function () {
   // ---- Сетка над бортами: по бокам «3 м», за воротами «5 м» ----
   function fenceTopY(wx) {
     const t = Math.min(1, Math.max(0, (Math.abs(wx - L / 2) / (L / 2) - 0.55) / 0.4));
-    return (141 + t * t * (234 - 141)) * S;
+    return (141 + t * t * (234 - 141)) * S;   // «3 м» по бокам, «5 м» за воротами
   }
   function makeFence() {
     const geo = wallStrip(boxOutline(0, 14, 6), () => BOARD_H * S, fenceTopY, { tile: 47 });
@@ -400,7 +369,8 @@ window.Scene3D = (function () {
     const grp = new T.Group();
     const white = mat(0xffffff, 0.5);
     const zLo = (MOUTH_LO - W / 2) * S, zHi = (MOUTH_HI - W / 2) * S;
-    const H = GOAL_H * S, R = 0.055, depth = 0.55 * faceIn;
+    // Ворота выступают за пределы коробки: сетка позади линии, а не на поле.
+    const H = GOAL_H * S, R = 0.06, depth = -0.8 * faceIn;
     const tx = (gx - L / 2) * S;
     // стойки
     [zLo, zHi].forEach((z) => {
@@ -656,5 +626,5 @@ window.Scene3D = (function () {
     renderer.render(scene, camera);
   }
 
-  return { init, resize, render, setCamera, getCamera, fitHeight };
+  return { init, resize, render, setCamera, getCamera };
 })();
