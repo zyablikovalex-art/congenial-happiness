@@ -242,12 +242,12 @@ const el = {
 /* =========================================================================
    Настройки камеры (угол/высота) — панель с ползунками, сохраняются локально
    ========================================================================= */
-const CAM_DEFAULTS = { angle: 40, height: 9.5 };
+const CAM_DEFAULTS = { angle: 35, height: 14 };
 // v1 мерил высоту от старой точки взгляда, v2 — от футбольного поля,
 // v3 — от коробки 40x20. Все три на площадке Rush дают не тот план,
 // поэтому выбрасываем: иначе сохранённая настройка молча перекрывает новый
 // дефолт и правка камеры до игрока просто не доезжает.
-const CAM_STORE_V = 4;
+const CAM_STORE_V = 5;
 let paused = false;
 // Демо-режим: пока открыта панель физики, играют оба ИИ (только в матче с ИИ —
 // в сетевой игре командой соперника управляет живой человек).
@@ -680,8 +680,25 @@ if (el.gamepad) {
 // Пробел — смена игрока, Shift — ускорение.
 const keyHeld = new Set();
 const MOVE_KEYS = ["arrowup", "arrowdown", "arrowleft", "arrowright"];
+
+/* Клавишу опознаём по e.code — это физическая позиция на клавиатуре, она не
+   зависит от раскладки. e.key в русской раскладке отдаёт «ы», «в», «ф»
+   вместо s, d, a, из-за чего пас, удар и навес просто не срабатывали.
+   Приводим к прежним обозначениям, чтобы остальной код не менялся. */
+function keyId(e) {
+  const c = e.code;
+  if (c) {
+    if (c.length === 4 && c.startsWith("Key")) return c[3].toLowerCase();
+    if (c === "Space") return " ";
+    if (c === "ShiftLeft" || c === "ShiftRight") return "shift";
+    if (c.startsWith("Arrow")) return c.toLowerCase();
+  }
+  const k = (e.key || "").toLowerCase();   // запасной путь для старых браузеров
+  return k === "spacebar" ? " " : k;
+}
+
 window.addEventListener("keydown", (e) => {
-  const k = e.key.toLowerCase();
+  const k = keyId(e);
   if (MOVE_KEYS.includes(k) || k === " " || k === "shift" || k === "s" || k === "d" || k === "a") e.preventDefault();
   if (keyHeld.has(k)) return; // без автоповтора
   keyHeld.add(k);
@@ -693,7 +710,7 @@ window.addEventListener("keydown", (e) => {
   }
 });
 window.addEventListener("keyup", (e) => {
-  const k = e.key.toLowerCase();
+  const k = keyId(e);
   keyHeld.delete(k);
   if (k === "s") releaseCharge("pass");
   if (k === "d") releaseCharge("shoot");
