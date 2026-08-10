@@ -100,6 +100,81 @@ window.Scene3D = (function () {
     return (x < CORNER_R * 0.1 || x > L - CORNER_R * 0.1) && Math.abs(z - W / 2) < GOAL_HALF;
   }
 
+  /* Мел на асфальте: классики, солнышко, каракули. Рисуем поверх асфальта,
+     но под разметкой — линии поля наносят краской, они ярче и сверху. */
+  function drawChalk(g, px, py, lx) {
+    const chalk = (a) => `rgba(238,240,235,${a})`;
+    const M = 46.86;                       // мировых единиц в метре
+
+    // Классики: лесенка клеток, местами парные, сверху «небо»
+    function hopscotch(x0, z0, cell) {
+      const rows = [[0], [0], [0], [-1, 1], [0], [-1, 1], [0]];
+      g.lineWidth = Math.max(1.5, lx(4));
+      g.strokeStyle = chalk(0.5);
+      g.font = `${Math.round(lx(cell * 0.5))}px sans-serif`;
+      g.fillStyle = chalk(0.42);
+      let n = 1;
+      rows.forEach((row, r) => {
+        row.forEach((c) => {
+          const cx = x0 + c * cell, cz = z0 + r * cell;
+          g.strokeRect(px(cx - cell / 2), py(cz - cell / 2), lx(cell), py(cz + cell / 2) - py(cz - cell / 2));
+          g.fillText(String(n++), px(cx) - lx(cell * 0.1), py(cz) + lx(cell * 0.16));
+        });
+      });
+      // «небо» — полукруг сверху
+      const topZ = z0 + rows.length * cell;
+      g.beginPath();
+      for (let i = 0; i <= 20; i++) {
+        const a = Math.PI + (i / 20) * Math.PI;
+        const xx = x0 + Math.cos(a) * cell, zz = topZ - cell / 2 + Math.sin(a) * -cell;
+        i ? g.lineTo(px(xx), py(zz)) : g.moveTo(px(xx), py(zz));
+      }
+      g.stroke();
+    }
+
+    // Солнышко с лучами
+    function sun(x0, z0, r) {
+      g.strokeStyle = chalk(0.42);
+      g.lineWidth = Math.max(1.5, lx(4));
+      g.beginPath();
+      for (let i = 0; i <= 24; i++) {
+        const a = (i / 24) * Math.PI * 2;
+        const xx = x0 + Math.cos(a) * r, zz = z0 + Math.sin(a) * r;
+        i ? g.lineTo(px(xx), py(zz)) : g.moveTo(px(xx), py(zz));
+      }
+      g.stroke();
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        g.beginPath();
+        g.moveTo(px(x0 + Math.cos(a) * r * 1.25), py(z0 + Math.sin(a) * r * 1.25));
+        g.lineTo(px(x0 + Math.cos(a) * r * 1.8), py(z0 + Math.sin(a) * r * 1.8));
+        g.stroke();
+      }
+    }
+
+    // Каракули — просто ломаные линии
+    function scribble(x0, z0, seed) {
+      g.strokeStyle = chalk(0.3);
+      g.lineWidth = Math.max(1, lx(3));
+      g.beginPath();
+      let x = x0, z = z0;
+      g.moveTo(px(x), py(z));
+      for (let k = 0; k < 9; k++) {
+        x += (nr(seed + k * 1.7) - 0.5) * M * 2.4;
+        z += (nr(seed + k * 3.1 + 9) - 0.5) * M * 1.8;
+        g.lineTo(px(x), py(z));
+      }
+      g.stroke();
+    }
+
+    hopscotch(L * 0.14, W * 0.10, M * 0.85);
+    hopscotch(L * 0.87, W * 0.72, M * 0.8);
+    sun(L * 0.72, W * 0.11, M * 1.1);
+    scribble(L * 0.34, W * 0.90, 3.3);
+    scribble(L * 0.55, W * 0.06, 7.9);
+    scribble(L * 0.06, W * 0.62, 12.4);
+  }
+
   // ---- Текстура покрытия (вид сверху) ----
   function pitchTexture() {
     const TW = 2048, TH = 1024;
@@ -140,18 +215,33 @@ window.Scene3D = (function () {
       g.beginPath(); g.ellipse(px(x), py(z), lx(r), lz(r), 0, 0, Math.PI * 2); g.fill();
     };
 
-    // Асфальт двора, поверх — резиновое покрытие коробки
-    g.fillStyle = "#3b3f45"; g.fillRect(0, 0, TW, TH);
-    g.fillStyle = "#2b7a48";
+    // Двор заасфальтирован целиком; коробка чуть светлее — по ней ходят.
+    g.fillStyle = "#3a3d42"; g.fillRect(0, 0, TW, TH);
+    g.fillStyle = "#4a4e54";
     g.beginPath();
     boxOutline(0, 10, 1).forEach(([x, z], i) => (i ? g.lineTo(px(x), py(z)) : g.moveTo(px(x), py(z))));
     g.closePath(); g.fill();
-    // Крошка: редкие точки, чтобы покрытие не выглядело заливкой
-    for (let i = 0; i < 9000; i++) {
+    // Зернистость асфальта и редкие тёмные заплатки
+    for (let i = 0; i < 14000; i++) {
       const x = nr(i * 1.7) * TW, y = nr(i * 3.3 + 5) * TH;
-      g.fillStyle = nr(i * 5.9) > 0.5 ? "rgba(255,255,255,0.045)" : "rgba(0,0,0,0.05)";
-      g.fillRect(x, y, 3, 3);
+      const v = nr(i * 5.9);
+      g.fillStyle = v > 0.55 ? "rgba(255,255,255,0.035)" : "rgba(0,0,0,0.06)";
+      g.fillRect(x, y, 2 + (v > 0.9 ? 2 : 0), 2);
     }
+    for (let i = 0; i < 22; i++) {
+      const x = nr(i * 11.3) * TW, y = nr(i * 7.7 + 3) * TH;
+      g.fillStyle = "rgba(0,0,0,0.07)";
+      g.beginPath(); g.ellipse(x, y, 30 + nr(i * 2.2) * 70, 18 + nr(i * 3.1) * 40, 0, 0, Math.PI * 2); g.fill();
+    }
+    // Трещины
+    g.strokeStyle = "rgba(0,0,0,0.13)"; g.lineWidth = 2;
+    for (let i = 0; i < 14; i++) {
+      let x = nr(i * 4.4) * TW, y = nr(i * 6.1) * TH;
+      g.beginPath(); g.moveTo(x, y);
+      for (let k = 0; k < 7; k++) { x += (nr(i * 9 + k) - 0.5) * 90; y += (nr(i * 13 + k) - 0.5) * 60; g.lineTo(x, y); }
+      g.stroke();
+    }
+    drawChalk(g, px, py, lx);
 
     g.strokeStyle = "rgba(255,255,255,0.9)";
     g.lineWidth = Math.max(2, lx(LINE_W));
@@ -182,6 +272,114 @@ window.Scene3D = (function () {
     tex.anisotropy = renderer.capabilities.getMaxAnisotropy ? renderer.capabilities.getMaxAnisotropy() : 1;
     tex.encoding = T.sRGBEncoding;
     return tex;
+  }
+
+  /* ---- Двор: панельные пятиэтажки по периметру ----
+     Фасад — одна процедурная текстура: панельные швы, ряды окон, часть
+     светится. На каждый дом свой клон с повтором под его размер, чтобы окно
+     всюду было одного размера. */
+  const MET = 46.86 * S;              // единиц сцены в одном метре
+
+  function facadeTexture() {
+    const c = document.createElement("canvas");
+    c.width = 256; c.height = 256;    // 1 плитка = 1 этаж x 2 окна
+    const g = c.getContext("2d");
+    g.fillStyle = "#b9b2a4"; g.fillRect(0, 0, 256, 256);
+    // панельные швы
+    g.strokeStyle = "rgba(0,0,0,0.16)"; g.lineWidth = 3;
+    g.beginPath(); g.moveTo(0, 2); g.lineTo(256, 2); g.moveTo(0, 254); g.lineTo(256, 254);
+    g.moveTo(2, 0); g.lineTo(2, 256); g.moveTo(128, 0); g.lineTo(128, 256); g.stroke();
+    // лёгкая грязь на панелях
+    for (let i = 0; i < 500; i++) {
+      g.fillStyle = nr(i * 3.7) > 0.5 ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)";
+      g.fillRect(nr(i * 1.9) * 256, nr(i * 5.3) * 256, 4, 4);
+    }
+    // два окна на плитку
+    for (let k = 0; k < 2; k++) {
+      const x = 26 + k * 128, y = 54, w = 76, h = 118;
+      g.fillStyle = "#3d4750"; g.fillRect(x - 5, y - 5, w + 10, h + 10);   // откос
+      const lit = nr(k * 7.1 + 2) > 0.72;
+      g.fillStyle = lit ? "#f2d99a" : "#2b333c";
+      g.fillRect(x, y, w, h);
+      g.strokeStyle = "rgba(255,255,255,0.5)"; g.lineWidth = 4;
+      g.beginPath(); g.moveTo(x + w / 2, y); g.lineTo(x + w / 2, y + h);
+      g.moveTo(x, y + h * 0.42); g.lineTo(x + w, y + h * 0.42); g.stroke();
+    }
+    const t = new T.CanvasTexture(c);
+    t.wrapS = t.wrapT = T.RepeatWrapping;
+    t.encoding = T.sRGBEncoding;
+    return t;
+  }
+
+  function makeHouses() {
+    const grp = new T.Group();
+    const base = facadeTexture();
+    const roofMat = mat(0x5f646b, 1);
+    const FLOORS = 5, FLOOR_H = 2.9 * MET;
+    const H = FLOORS * FLOOR_H;
+
+    // Дом: коробка с фасадом + плоская крыша с парапетом
+    function house(cx, cz, lenM, depthM, yaw, tint) {
+      const len = lenM * MET, dep = depthM * MET;
+      const tex = base.clone();
+      tex.needsUpdate = true;
+      tex.repeat.set(Math.max(2, Math.round(lenM / 5.2)), FLOORS);
+      const wall = new T.MeshStandardMaterial({ map: tex, roughness: 0.95, color: tint });
+      const m = new T.Mesh(new T.BoxGeometry(len, H, dep), wall);
+      m.position.set(cx, H / 2, cz); m.rotation.y = yaw;
+      grp.add(m);
+      const roof = new T.Mesh(new T.BoxGeometry(len + 0.4, 0.5 * MET, dep + 0.4), roofMat);
+      roof.position.set(cx, H + 0.25 * MET, cz); roof.rotation.y = yaw;
+      grp.add(roof);
+    }
+
+    /* Камера смотрит вниз под 35°, а верх кадра при этом на 10° ниже
+       горизонта — значит видно только то, что заметно ниже камеры. Поэтому
+       дома стоят вплотную за ограждением: так в кадр попадают их нижние
+       этажи. Отодвинь их дальше — и они уйдут выше верхней кромки. */
+    const fx = groundHalfX, fz = groundHalfZ;
+    const GAP = 6 * MET;
+    // дальняя сторона — сплошная линия домов, её видно всегда
+    house(-fx * 0.72, fz + GAP, 46, 12, 0, 0xd8cfbe);
+    house(-fx * 0.03, fz + GAP + 2 * MET, 44, 12, 0, 0xc8c6bb);
+    house(fx * 0.68, fz + GAP, 46, 12, 0, 0xd2c7b4);
+    // торцы за воротами
+    house(-fx - GAP, -fz * 0.2, 44, 12, Math.PI / 2, 0xcdc9bd);
+    house(-fx - GAP - 2 * MET, fz * 0.75, 34, 12, Math.PI / 2, 0xd6ccba);
+    house(fx + GAP, fz * 0.25, 46, 12, Math.PI / 2, 0xcfc6b6);
+    house(fx + GAP + 2 * MET, -fz * 0.7, 34, 12, Math.PI / 2, 0xc9c4b6);
+    // ближняя сторона — попадает в кадр на пологой камере
+    house(fx * 0.1, -fz - GAP * 1.6, 70, 12, 0, 0xd0c8b8);
+    return grp;
+  }
+
+  // Дерево: ствол и две шапки листвы
+  function makeTree(x, z, scale) {
+    const g = new T.Group();
+    const trunk = new T.Mesh(new T.CylinderGeometry(0.16 * MET, 0.22 * MET, 3 * MET, 6), mat(0x5b4632, 1));
+    trunk.position.y = 1.5 * MET; g.add(trunk);
+    const c1 = new T.Mesh(new T.SphereGeometry(1.7 * MET, 8, 6), mat(0x2f6b32, 1));
+    c1.position.y = 4.2 * MET; g.add(c1);
+    const c2 = new T.Mesh(new T.SphereGeometry(1.25 * MET, 8, 6), mat(0x37793a, 1));
+    c2.position.set(0.6 * MET, 5.4 * MET, -0.3 * MET); g.add(c2);
+    g.position.set(x, 0, z); g.scale.setScalar(scale);
+    return g;
+  }
+
+  function makeYard() {
+    const grp = new T.Group();
+    grp.add(makeHouses());
+    const fx = groundHalfX, fz = groundHalfZ;
+    const spots = [
+      // На дальней стороне деревьев нет: в этой полосе кадра должны быть дома,
+      // а дерево того же роста, что видимая часть дома, просто закрывает его.
+      [-fx - 2.5 * MET, fz * 0.5, 1.0], [-fx - 3 * MET, -fz * 0.55, 0.9],
+      [fx + 2.5 * MET, -fz * 0.45, 0.95], [fx + 3 * MET, fz * 0.6, 1.05],
+      [-fx * 0.6, -fz - 3 * MET, 1.0], [fx * 0.5, -fz - 3.5 * MET, 0.9],
+      [-fx * 0.05, -fz - 3.2 * MET, 0.85],
+    ];
+    spots.forEach(([x, z, s]) => grp.add(makeTree(x, z, s)));
+    return grp;
   }
 
   function fenceTexture() {
@@ -585,13 +783,16 @@ window.Scene3D = (function () {
     camera = new T.PerspectiveCamera(50, 1, 0.1, 300);
 
     // Свет
-    scene.add(new T.HemisphereLight(0xbad7ff, 0x3f6a33, 0.95));
-    const sun = new T.DirectionalLight(0xffffff, 0.75);
-    sun.position.set(6, 14, 4);
+    // Отражённый снизу свет — от асфальта, а не от травы: с зелёным оттенком
+    // фасады домов уходили в грязно-зелёный. Солнце перенесено на сторону
+    // камеры, иначе дальний ряд домов всегда стоял к нам теневой стеной.
+    scene.add(new T.HemisphereLight(0xbfd9ff, 0x54565c, 1.05));
+    const sun = new T.DirectionalLight(0xfff3e0, 0.8);
+    sun.position.set(7, 15, -9);
     scene.add(sun);
 
     // Тёмная база под всем + газон с разметкой (шире поля на RUNOFF с каждой стороны)
-    const base = new T.Mesh(new T.PlaneGeometry(groundHalfX * 2 + 60, groundHalfZ * 2 + 60), mat(0x3b3f45, 1));
+    const base = new T.Mesh(new T.PlaneGeometry(groundHalfX * 2 + 140, groundHalfZ * 2 + 140), mat(0x3a3d42, 1));
     base.rotation.x = -Math.PI / 2; base.position.y = -0.02; scene.add(base);
 
     const pitch = new T.Mesh(new T.PlaneGeometry(groundHalfX * 2, groundHalfZ * 2),
@@ -599,6 +800,7 @@ window.Scene3D = (function () {
     pitch.rotation.x = -Math.PI / 2;
     scene.add(pitch);
 
+    scene.add(makeYard());
     scene.add(makeBoards());
     scene.add(makeFence());
     scene.add(makeTunnel());
