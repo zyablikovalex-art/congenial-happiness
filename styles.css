@@ -900,6 +900,93 @@ button#startBtn:active { transform: scale(0.96); }
   .net-check { margin-bottom: 8px; }
 }
 
+/* ---------- Подсказка по управлению перед матчем ---------- */
+#howto {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(3, 25, 13, 0.82);
+  backdrop-filter: blur(4px);
+  z-index: 13;
+}
+#howto[hidden] { display: none; }
+.howto-card { max-width: 470px; }
+.howto-card h2 {
+  margin: 0 0 16px;
+  font-size: 20px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.howto-cols { display: flex; gap: 26px; align-items: center; justify-content: center; }
+
+/* Клавиша: приподнятая площадка с тенью снизу */
+.kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  height: 36px;
+  padding: 0 9px;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #59636f, #38414b);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+}
+.kbd.wide { min-width: 84px; font-size: 13px; }
+
+.keycross {
+  display: grid;
+  grid-template-columns: repeat(3, 36px);
+  gap: 6px;
+  justify-content: center;
+}
+.howto-move { text-align: center; }
+.howto-cap {
+  display: block;
+  margin-top: 10px;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+
+.howto-acts { list-style: none; margin: 0; padding: 0; text-align: left; }
+/* Колонка под клавишу фиксированной ширины — иначе широкие «Пробел» и
+   «Shift» сдвигают свои подписи вправо и список выглядит рваным. */
+.howto-acts li {
+  display: grid;
+  grid-template-columns: 84px 1fr;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 9px;
+  font-size: 14px;
+}
+.howto-acts li .kbd { justify-self: start; }
+.howto-acts li:last-child { margin-bottom: 0; }
+
+.howto-hold { margin: 18px 0 4px; font-size: 13px; opacity: 0.8; }
+.howto-touch { margin: 0; font-size: 12px; opacity: 0.55; }
+
+@media (orientation: landscape) and (max-height: 430px) {
+  #howto { padding: 8px; }
+  .howto-card { padding: 14px 16px 16px; }
+  .howto-card h2 { margin-bottom: 10px; font-size: 17px; }
+  .kbd { min-width: 30px; height: 30px; font-size: 13px; }
+  .kbd.wide { min-width: 70px; font-size: 12px; }
+  .keycross { grid-template-columns: repeat(3, 30px); gap: 5px; }
+  .howto-acts li { grid-template-columns: 70px 1fr; gap: 10px; }
+  .howto-cap { margin-top: 7px; }
+  .howto-acts li { margin-bottom: 4px; font-size: 13px; }
+  .howto-hold { margin: 10px 0 2px; font-size: 12px; }
+  .howto-touch { font-size: 11px; }
+}
+
 /* ---------- Подсказка «поверни устройство» ---------- */
 #rotate {
   position: fixed;

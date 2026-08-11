@@ -3,7 +3,7 @@
 /* Версия сборки. Увеличивается на каждый релиз и показывается в углу меню.
    Держать её и CACHE в sw.js одним и тем же числом: по нему же обновляется
    офлайновый кэш, иначе игрок увидит новый номер поверх старых файлов. */
-const APP_VERSION = 59;
+const APP_VERSION = 60;
 
 /* =========================================================================
    Футбол 11 на 11 — 3D (Three.js), альбомная ориентация.
@@ -240,6 +240,8 @@ const el = {
   mCards: document.getElementById("mCards"),
   mLen: document.getElementById("mLen"),
   mVersion: document.getElementById("mVersion"),
+  howto: document.getElementById("howto"),
+  howtoGo: document.getElementById("howtoGo"),
   freezeOpp: document.getElementById("freezeOpp"),
   trainBadge: document.getElementById("trainBadge"),
   netLenRow: document.getElementById("netLenRow"),
@@ -1918,6 +1920,7 @@ loadMatchMinutes();
 
 function showMenu() {
   state = "menu";
+  if (el.howto) el.howto.hidden = true;
   if (el.menuUI) { el.menuUI.classList.add("show"); el.menuUI.classList.remove("tasks"); }
   el.overlay.classList.remove("show");
   if (el.netPanel) el.netPanel.hidden = true;
@@ -1940,9 +1943,38 @@ if (el.mVersion) el.mVersion.textContent = "v" + APP_VERSION;
 /* =========================================================================
    Потоки: меню / матч / итог
    ========================================================================= */
+/* Перед каждым матчем показываем управление. Матч начинается только после
+   того, как подсказку закрыли, — иначе она висела бы поверх заставки. */
 function startMatch() {
+  if (!el.howto) { beginMatch(); return; }
+  hideMenu();
+  el.overlay.classList.remove("show");
+  if (el.netPanel) el.netPanel.hidden = true;
+  el.howto.hidden = false;
+}
+
+function closeHowto() {
+  if (!el.howto || el.howto.hidden) return;
+  el.howto.hidden = true;
+  beginMatch();
+}
+
+if (el.howtoGo) el.howtoGo.addEventListener("click", closeHowto);
+if (el.howto) el.howto.addEventListener("click", closeHowto);
+// Любая клавиша закрывает подсказку — кроме модификаторов: их нажимают
+// вслепую, и подсказка пропала бы раньше, чем её успели прочитать.
+const HOWTO_IGNORE = ["Shift", "Control", "Alt", "Meta", "CapsLock", "Tab"];
+window.addEventListener("keydown", (e) => {
+  if (!el.howto || el.howto.hidden) return;
+  if (HOWTO_IGNORE.includes(e.key)) return;
+  e.preventDefault();
+  closeHowto();
+});
+
+function beginMatch() {
   scoreYou = 0; scoreCpu = 0; timeLeft = MATCH_SECONDS; celebrate = 0; F = 0;
   goalAt = null; scorer = null; netHitAt = null;
+  if (el.howto) el.howto.hidden = true;
   updateScoreHud();
   const mm = Math.floor(MATCH_SECONDS / 60), ss = MATCH_SECONDS % 60;
   el.clock.textContent = `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
